@@ -44,19 +44,19 @@ component ToolButton inherits Rectangle {
 
     callback clicked();
 
-    width: 68px;
+    width: 58px;
     border-radius: Theme.r;
     background: touch.pressed || root.current ? Theme.field : Colors.transparent;
 
     VerticalLayout {
         alignment: center;
-        spacing: 6px;
+        spacing: 3px;
 
         HorizontalLayout {
             alignment: center;
             Icon {
                 glyph: root.glyph;
-                size: 22px;
+                size: 19px;
                 weight: 1.7;
                 tint: root.current ? Theme.accent : Theme.fg;
             }
@@ -65,7 +65,7 @@ component ToolButton inherits Rectangle {
         Text {
             text: root.label;
             color: root.current ? Theme.fg : Theme.fg-muted;
-            font-size: Theme.fs-sm;
+            font-size: Theme.fs-xs;
             horizontal-alignment: center;
             overflow: elide;
         }
@@ -127,6 +127,194 @@ component PillButton inherits Rectangle {
 
     touch := TouchArea {
         clicked => { root.clicked(); }
+    }
+}
+
+/// The Reels tab's own furniture over a full-screen preview, so the edit is
+/// seen as it will be: the camera and title at the top, the rail of
+/// buttons down the right, the account and caption at the bottom. A tap
+/// anywhere plays or pauses, as a Reel does.
+component ReelChrome inherits Rectangle {
+    in property <string> name;
+
+    callback closed();
+
+    TouchArea {
+        clicked => { Editor.play-toggled(); }
+    }
+
+    // Shade top and bottom, where Instagram darkens the picture under its
+    // words.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 110px;
+        background: @linear-gradient(180deg, #00000080 0%, #00000000 100%);
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - self.height;
+        width: parent.width;
+        height: 220px;
+        background: @linear-gradient(0deg, #00000099 0%, #00000000 100%);
+    }
+
+    HorizontalLayout {
+        x: 0;
+        y: 8px;
+        width: parent.width;
+        height: 48px;
+        padding-left: 4px;
+        padding-right: 16px;
+
+        BarButton {
+            glyph: Glyph.chevron-left;
+            icon-size: 26px;
+            clicked => { root.closed(); }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: I18n.t("Reels");
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+
+    if !Editor.playing: Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: 72px;
+        height: 72px;
+        border-radius: 36px;
+        background: #00000066;
+
+        Icon {
+            x: (parent.width - self.width) / 2 + 3px;
+            y: (parent.height - self.height) / 2;
+            glyph: Glyph.play;
+            size: 34px;
+            tint: #ffffff;
+        }
+    }
+
+    // The rail: like, comment, share, more.
+    VerticalLayout {
+        x: parent.width - self.width - 8px;
+        y: parent.height - self.preferred-height - 40px;
+        width: 56px;
+        spacing: 18px;
+
+        for mark[i] in [Glyph.heart, Glyph.comment, Glyph.send]: VerticalLayout {
+            spacing: 4px;
+            HorizontalLayout {
+                alignment: center;
+                Icon { glyph: mark; size: 28px; weight: 1.8; tint: #ffffff; }
+            }
+            Text {
+                text: i == 0 ? "1.2K" : i == 1 ? "48" : I18n.t("Share");
+                color: #ffffff;
+                font-size: 12px;
+                horizontal-alignment: center;
+            }
+        }
+        Text {
+            text: "•••";
+            color: #ffffff;
+            font-size: 14px;
+            horizontal-alignment: center;
+        }
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 30px;
+                height: 30px;
+                border-radius: 6px;
+                border-width: 2px;
+                border-color: #ffffff;
+                background: #333333;
+            }
+        }
+    }
+
+    // The account and caption.
+    VerticalLayout {
+        x: 14px;
+        y: parent.height - self.preferred-height - 36px;
+        width: parent.width - 100px;
+        spacing: 10px;
+
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+
+            Rectangle {
+                width: 34px;
+                height: 34px;
+                border-radius: 17px;
+                background: Theme.accent;
+                border-width: 1.5px;
+                border-color: #ffffff;
+            }
+            Text {
+                text: I18n.t("your.account");
+                color: #ffffff;
+                font-size: 15px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                width: follow.preferred-width + 20px;
+                height: 28px;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: #ffffffb3;
+
+                follow := Text {
+                    x: 10px;
+                    height: parent.height;
+                    text: I18n.t("Follow");
+                    color: #ffffff;
+                    font-size: 13px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        Text {
+            text: root.name;
+            color: #ffffff;
+            font-size: 14px;
+            overflow: elide;
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Icon { glyph: Glyph.music; size: 13px; tint: #ffffff; }
+            Text {
+                text: I18n.t("Original audio");
+                color: #ffffff;
+                font-size: 13px;
+            }
+        }
+    }
+
+    // Where the Reel is: a thin bar along the bottom.
+    Rectangle {
+        x: 0;
+        y: parent.height - 3px;
+        width: parent.width;
+        height: 3px;
+        background: #ffffff33;
+
+        Rectangle {
+            x: 0;
+            width: parent.width * Math.min(1, Editor.playhead / Math.max(0.01, Editor.preview-duration));
+            height: parent.height;
+            background: #ffffff;
+        }
     }
 }
 
@@ -353,12 +541,15 @@ export component PhoneEditor inherits Rectangle {
 
     // ── the arrangement ──────────────────────────────────────────────────
     property <length> bar-h: 56px;
-    property <length> transport-h: 48px;
-    property <length> tools-h: 76px;
-    property <length> strip-h: root.is-title ? 52px : 0px;
-    /// Under a third of the screen, so the picture gets the room; never so
-    /// little the lanes are unusable.
-    property <length> timeline-h: Math.max(140px, root.height * 0.29);
+    property <length> transport-h: 44px;
+    property <length> tools-h: 58px;
+    property <length> strip-h: root.is-title ? 48px : 0px;
+    /// The timeline's share of the screen, dragged by the grip over it.
+    property <float> timeline-share: 0.24;
+    /// Never so little the lanes are unusable, never so much the picture
+    /// disappears.
+    property <length> timeline-h: Math.max(110px,
+        Math.min(root.height * 0.5, root.height * root.timeline-share));
     property <length> lower-h: root.full ? 0px
         : root.timeline-h + root.strip-h + root.tools-h;
     property <length> monitor-h: Math.max(80px,
@@ -373,6 +564,7 @@ export component PhoneEditor inherits Rectangle {
         y: 0;
         width: root.width;
         height: root.bar-h;
+        visible: !root.full;
 
         HorizontalLayout {
             padding-left: 4px;
@@ -481,30 +673,41 @@ export component PhoneEditor inherits Rectangle {
         }
     }
 
-    // The monitor, with the full-screen switch in its corner.
+    // The monitor. Full screen, it is the Reels tab: the whole screen,
+    // black, the picture fitted and nothing of the editor over it.
     Seat {
         x: 0;
-        y: root.bar-h;
+        y: root.full ? 0px : root.bar-h;
         width: root.width;
-        height: root.monitor-h;
+        height: root.full ? root.height : root.monitor-h;
         kind: PaneKind.preview;
         phone: true;
         safe-zones: root.safe-zones;
+        reel: root.full;
     }
 
-    // The Reels safe zones, on and off.
-    BarButton {
+    if !root.full: BarButton {
         x: root.width - self.width - 8px;
         y: root.bar-h + 8px;
         glyph: root.safe-zones ? Glyph.eye : Glyph.eye-off;
         clicked => { root.safe-zones = !root.safe-zones; }
     }
 
-    BarButton {
+    if !root.full: BarButton {
         x: root.width - self.width - 8px;
         y: root.bar-h + root.monitor-h - self.height - 8px;
-        glyph: root.full ? Glyph.chevron-down : Glyph.maximize;
-        clicked => { root.full = !root.full; }
+        glyph: Glyph.maximize;
+        clicked => {
+            root.close();
+            root.full = true;
+        }
+    }
+
+    if root.full: ReelChrome {
+        width: root.width;
+        height: root.height;
+        name: root.project-name;
+        closed => { root.full = false; }
     }
 
     // The transport.
@@ -513,6 +716,7 @@ export component PhoneEditor inherits Rectangle {
         y: root.bar-h + root.monitor-h;
         width: root.width;
         height: root.transport-h;
+        visible: !root.full;
 
         Rectangle {
             x: 0;
@@ -641,6 +845,41 @@ export component PhoneEditor inherits Rectangle {
             height: parent.height;
             kind: PaneKind.timeline;
             phone: true;
+        }
+
+        // The grip: drag the timeline's top edge to give it more or less of
+        // the screen.
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 14px;
+
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: 4px;
+                width: 36px;
+                height: 4px;
+                border-radius: 2px;
+                background: grip.pressed ? Theme.accent : Theme.line-strong;
+            }
+
+            // The grip moves as it is dragged, so the finger is measured
+            // on the screen, not against the grip.
+            grip := TouchArea {
+                property <float> from-share;
+                property <length> from-y;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        self.from-share = root.timeline-share;
+                        self.from-y = self.absolute-position.y + self.mouse-y;
+                    }
+                }
+                moved => {
+                    root.timeline-share = Math.max(0.14, Math.min(0.5, self.from-share
+                        - (self.absolute-position.y + self.mouse-y - self.from-y) / root.height));
+                }
+            }
         }
     }
 

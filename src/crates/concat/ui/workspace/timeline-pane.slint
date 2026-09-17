@@ -61,6 +61,8 @@ export component TimelinePane inherits Rectangle {
     in property <[TrackData]> tracks;
     in property <[ClipData]> clips;
     in property <float> playhead;
+    /// The edit's length, for the phone's scrub bar.
+    in property <float> duration;
     in property <float> frame-rate: 30;
     in property <float> scroll-left;
     in property <float> seconds-per-pixel: 0.05;
@@ -255,6 +257,7 @@ export component TimelinePane inherits Rectangle {
                 clips: root.clips;
                 tool: root.tool;
                 playhead: root.playhead;
+                duration: root.duration;
                 frame-rate: root.frame-rate;
                 scroll-left: root.scroll-left;
                 seconds-per-pixel: root.seconds-per-pixel;

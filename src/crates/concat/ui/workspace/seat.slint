@@ -39,6 +39,8 @@ export component Seat inherits Rectangle {
     in property <string> only-section;
     /// The monitor's Reels safe zones; see StageOverlay.
     in property <bool> safe-zones;
+    /// The monitor as the Reels tab shows it; see PreviewPane.reel.
+    in property <bool> reel;
 
     /// Its corner button was used.
     callback picked(kind: PaneKind);
@@ -154,6 +156,7 @@ export component Seat inherits Rectangle {
             height: root.height;
             bare: root.phone;
             safe-zones: root.safe-zones;
+            reel: root.reel;
 
             pane-picked(kind) => { root.picked(kind); }
             pane-seat: root.index;
@@ -323,6 +326,7 @@ export component Seat inherits Rectangle {
             sound-selected: Editor.sound-selected;
             title-selected: Editor.title-selected;
             playhead: Editor.playhead;
+            duration: Editor.preview-duration;
             frame-rate: Editor.frame-rate;
             scroll-left: Editor.scroll-left;
             seconds-per-pixel: Editor.seconds-per-pixel;

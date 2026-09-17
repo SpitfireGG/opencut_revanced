@@ -42,6 +42,8 @@ export struct CaptionsSheetData {
     progress: float,
     /// A transcriber model is installed.
     ready: bool,
+    /// The model is being downloaded before the run.
+    fetching: bool,
     /// Why the last run failed, when it did.
     message: string,
 }
@@ -100,7 +102,7 @@ export component CaptionsDialog inherits Modal {
             }
 
             if !root.data.ready: Text {
-                text: I18n.t("Download a transcriber model in Settings › Transcriber first.");
+                text: I18n.t("The first run downloads the speech model (148 MB), then makes the captions.");
                 color: Theme.fg-muted;
                 font-size: Theme.fs-sm;
                 wrap: word-wrap;
@@ -228,7 +230,9 @@ export component CaptionsDialog inherits Modal {
 
                 Text {
                     horizontal-stretch: 1;
-                    text: root.data.progress < 0.02 ? I18n.t("Loading the model") : I18n.t("Transcribing");
+                    text: root.data.fetching ? I18n.t("Downloading the speech model")
+                        : root.data.progress < 0.02 ? I18n.t("Loading the model")
+                        : I18n.t("Transcribing");
                     color: Theme.fg;
                     font-size: Theme.fs;
                     vertical-alignment: center;
@@ -260,8 +264,10 @@ export component CaptionsDialog inherits Modal {
                 primary: true;
                 large: true;
                 glyph: Glyph.text-mark;
-                label: root.from-sound ? I18n.t("Generate captions") : I18n.t("Add captions");
-                enabled: root.from-sound ? root.data.ready : root.draft != "";
+                label: !root.from-sound ? I18n.t("Add captions")
+                    : root.data.ready ? I18n.t("Generate captions")
+                    : I18n.t("Download and generate");
+                enabled: root.from-sound || root.draft != "";
                 clicked => { root.begin(); }
             }
         }

@@ -77,12 +77,12 @@ pub const OUTPUTS: [(i32, i32); 10] = [
     (1080, 1350),
 ];
 
-/// Instagram's Reels interface over a portrait frame, as lines a dragged
-/// picture snaps to - the button column's left edge, and the bottom of the
-/// top bar, the top of the buttons and the top of the profile block. The
+/// Meta's Reels safe zone over a portrait frame, as lines a dragged picture
+/// snaps to: the side margins and the button rail's left edge, then the top
+/// margin, the top of the button rail and the top of the bottom block. The
 /// monitor draws the same zones; see StageOverlay in preview-pane.slint.
-const SAFE_ZONE_XS: [f64; 1] = [0.84];
-const SAFE_ZONE_YS: [f64; 3] = [0.10, 0.45, 0.78];
+const SAFE_ZONE_XS: [f64; 3] = [0.0593, 0.7898, 0.9407];
+const SAFE_ZONE_YS: [f64; 3] = [0.1406, 0.599, 0.65];
 
 /// A moment worth a Reel, found in a clip's sound; see `find_highlights`.
 pub struct Highlight {
@@ -252,6 +252,8 @@ pub struct CaptionsSheet {
     pub size: usize,
     /// 0 a line at a time, 1 viral: a few words at a time, popping in.
     pub style: usize,
+    /// The model is downloading, and the run starts when it lands.
+    pub fetching: bool,
     pub running: bool,
     pub progress: f32,
     /// Why the last run failed, when it did.
@@ -283,6 +285,9 @@ const PACES: [f32; 3] = [0.85, 1.0, 1.15];
 /// the centre, positive down. Bottom, centre, top.
 const CAPTION_OFFSETS: [f64; 3] = [0.35, 0.0, -0.35];
 /// A caption's cap height by the sheet's row, as a fraction of the frame.
+/// The transcriber the captions sheet fetches when none is installed: fast
+/// enough on a phone, and it hears any language.
+const CAPTION_MODEL: &str = "base";
 const CAPTION_SIZES: [f64; 3] = [0.04, 0.05, 0.065];
 /// A rough speaking rate, for the estimate under the script.
 const CHARS_PER_SECOND: f32 = 14.0;
@@ -5587,6 +5592,10 @@ impl Studio {
                                 list.iter_mut().find(|model| model.id == progress.id)
                             {
                                 model.fetched = Some(progress.received as f32 / 1_000_000.0);
+                                if studio.captions.fetching && progress.total > 0 {
+                                    studio.captions.progress =
+                                        progress.received as f32 / progress.total as f32;
+                                }
                                 model.unpacking = progress.unpacking;
                                 if progress.total > 0 {
                                     model.megabytes = progress.total as f32 / 1_000_000.0;
@@ -5622,6 +5631,21 @@ impl Studio {
                     Err(error) => studio.notify(&error, true),
                 }
                 studio.refresh_models();
+                // A caption run that was waiting on this model.
+                if studio.captions.fetching && id == CAPTION_MODEL {
+                    studio.captions.fetching = false;
+                    studio.captions.running = false;
+                    let row = Self::installed(&studio.transcribers)
+                        .iter()
+                        .position(|model| model.id == id);
+                    match row {
+                        Some(row) if studio.captions.open => {
+                            studio.captions.model = row;
+                            studio.captions_run();
+                        }
+                        _ => studio.captions.message = t("The speech model did not download"),
+                    }
+                }
             },
         );
     }
@@ -5677,6 +5701,15 @@ impl Studio {
     /// transcriber, or the script cut into lines. Either lands as one batch
     /// of title clips - one undo step.
     pub fn captions_run(&mut self) {
+        if self.captions.clip.is_some() && Self::installed(&self.transcribers).is_empty() {
+            // Nothing to hear with yet: fetch the model, then carry on.
+            self.captions.fetching = true;
+            self.captions.running = true;
+            self.captions.progress = 0.0;
+            self.captions.message.clear();
+            self.model_download(CAPTION_MODEL);
+            return;
+        }
         if self.captions.clip.is_some() {
             self.captions_from_sound();
         } else {
@@ -5818,6 +5851,10 @@ impl Studio {
     }
 
     pub fn captions_cancel(&mut self) {
+        if self.captions.fetching {
+            self.captions.fetching = false;
+            self.host.transcriber.cancel_download();
+        }
         self.host.transcriber.cancel();
         self.captions.running = false;
         self.captions.open = false;
@@ -6291,7 +6328,8 @@ impl Studio {
                         .map(|text| text.content.as_str())
                         .unwrap_or_default()
                         .into(),
-                    wave: if clip.kind == model::ClipKind::Audio {
+                    // A video's too: the phone draws it under the frames.
+                    wave: if matches!(clip.kind, model::ClipKind::Audio | model::ClipKind::Video) {
                         self.wave(clip)
                     } else {
                         SharedString::new()
@@ -7208,6 +7246,7 @@ impl Studio {
             running: self.captions.running,
             progress: self.captions.progress,
             ready: !transcribers.is_empty(),
+            fetching: self.captions.fetching,
             message: self.captions.message.as_str().into(),
         });
         let voices = Self::installed(&self.voices);
@@ -8198,7 +8237,7 @@ impl Studio {
                 }),
                 duration: Some(((end - start) / rate).max(0.2)),
                 // Above the profile block of a Reel; see SAFE_ZONE_YS.
-                offset_y: Some(0.12),
+                offset_y: Some(0.08),
             })
             .collect();
         let count = commands.len();

@@ -528,12 +528,16 @@ component StageOverlay inherits Rectangle {
     /// Draw Instagram's Reels interface over a portrait frame, and mark
     /// where a selected picture runs under it or over another picture.
     in property <bool> safe-zones;
-    // The Reels layout: the top bar, the profile and caption block, and the
-    // column of buttons. Studio::SAFE_ZONE_EDGES snaps to the same lines.
+    // Meta's Reels safe zone, on a 1080x1920 frame: 270px clear at the top,
+    // 672px at the bottom, 64px each side, and the button rail 227px in
+    // from the right from 1150px down. Studio::SAFE_ZONE_XS/YS snap to the
+    // same lines.
     property <[SafeZone]> zones: [
-        { x0: 0, y0: 0, x1: 1, y1: 0.10, label: I18n.t("Top bar") },
-        { x0: 0, y0: 0.78, x1: 0.82, y1: 1, label: I18n.t("Profile & caption") },
-        { x0: 0.84, y0: 0.45, x1: 1, y1: 0.92, label: I18n.t("Buttons") },
+        { x0: 0, y0: 0, x1: 1, y1: 0.1406, label: I18n.t("Top bar") },
+        { x0: 0, y0: 0.65, x1: 0.7898, y1: 1, label: I18n.t("Profile & caption") },
+        { x0: 0.7898, y0: 0.599, x1: 1, y1: 1, label: I18n.t("Buttons") },
+        { x0: 0, y0: 0.1406, x1: 0.0593, y1: 0.65, label: "" },
+        { x0: 0.9407, y0: 0.1406, x1: 1, y1: 0.599, label: "" },
     ];
     in property <[StageGuideData]> guides;
     /// The brush stroke in flight, and whether a press paints; see Editor.
@@ -714,6 +718,10 @@ export component PreviewPane inherits Rectangle {
     in property <bool> bare;
     /// Instagram's Reels interface over a portrait frame; see StageOverlay.
     in property <bool> safe-zones;
+    /// Played back the way the Reels tab shows it: the picture edge to edge
+    /// on black, fitted, with nothing drawn over it.
+    in property <bool> reel;
+    changed reel => { viewport.fit(); }
 
     // ── what the output is ───────────────────────────────────────────────
     in property <int> output-width: 1920;
@@ -828,10 +836,10 @@ export component PreviewPane inherits Rectangle {
             // it rather than sit level with it — the darker the surround, the
             // less the picture has to fight to be the brightest thing in the
             // pane.
-            background: Theme.well;
+            background: root.reel ? #000000 : Theme.well;
             clip: true;
 
-            property <length> pad: 16px;
+            property <length> pad: root.reel ? 0px : 16px;
             property <length> room-w: Math.max(1px, self.width - 2 * self.pad);
             property <length> room-h: Math.max(1px, self.height - 2 * self.pad);
 
@@ -977,7 +985,7 @@ export component PreviewPane inherits Rectangle {
                 // box-shadow, so the ring does the work alone — which is why
                 // it is `line-strong` and not the hairline every other edge
                 // uses.
-                border-width: 1px;
+                border-width: root.reel ? 0px : 1px;
                 border-color: Theme.line-strong;
                 clip: true;
 
@@ -1020,7 +1028,7 @@ export component PreviewPane inherits Rectangle {
             // The selection, over the stage and the same size as it. A
             // sibling rather than a child because the stage clips, and a grip
             // sits half outside the edge it belongs to.
-            StageOverlay {
+            if !root.reel: StageOverlay {
                 x: stage.x;
                 y: stage.y;
                 width: stage.width;

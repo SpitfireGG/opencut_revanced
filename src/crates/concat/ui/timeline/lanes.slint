@@ -164,6 +164,9 @@ component Clip inherits Rectangle {
     property <bool> marked: root.item.kind == ClipKind.filter;
     property <length> text-x: root.marked ? 22px : 7px;
     property <length> body-h: Math.max(0px, root.height - root.header-h);
+    /// The phone's sound strip under a video's frames; none without sound.
+    property <length> sound-h: root.phone && root.item.kind == ClipKind.video
+        && root.item.wave != "" ? Math.min(16px, root.body-h * 0.3) : 0px;
     /// A fade on a picture clip is shaded in a band at the foot instead of
     /// over the whole body: the fade is an *audio* property, and shading the
     /// picture would say it fades to black. Sound shades its whole body; a
@@ -207,7 +210,7 @@ component Clip inherits Rectangle {
         // trade-off is per-pixel extremes when zoomed right in — there the
         // envelope is a stretched shape rather than a fresh scan of the
         // buckets.
-        if root.item.wave != "": Path {
+        if root.item.wave != "" && root.item.kind == ClipKind.audio: Path {
             x: 0;
             y: 0;
             width: parent.width;
@@ -219,7 +222,7 @@ component Clip inherits Rectangle {
             fill: Theme.wave;
         }
 
-        if root.item.wave != "": Rectangle {
+        if root.item.wave != "" && root.item.kind == ClipKind.audio: Rectangle {
             x: 0;
             y: (parent.height - 1px) / 2;
             width: parent.width;
@@ -250,7 +253,7 @@ component Clip inherits Rectangle {
             x: 0;
             y: 0;
             width: parent.width;
-            height: parent.height;
+            height: parent.height - root.sound-h;
             clip: true;
 
             property <length> tile-w: Math.max(4px,
@@ -278,6 +281,28 @@ component Clip inherits Rectangle {
                 source-clip-y: 0;
                 source-clip-width: root.item.strip.frame-width;
                 source-clip-height: root.item.strip.height;
+            }
+        }
+
+        // On a phone a video's sound runs under its frames, as VN draws it:
+        // a strip of its envelope in the accent.
+        if root.sound-h > 0: Rectangle {
+            x: 0;
+            y: parent.height - root.sound-h;
+            width: parent.width;
+            height: root.sound-h;
+            background: #00000099;
+
+            Path {
+                x: 0;
+                y: 1px;
+                width: parent.width;
+                height: parent.height - 2px;
+                commands: root.item.wave;
+                viewbox-width: 1;
+                viewbox-height: 1;
+                fit: fill;
+                fill: Theme.accent;
             }
         }
 
@@ -599,6 +624,8 @@ export component Lanes inherits Rectangle {
     in property <[ClipData]> clips;
     in property <TimelineTool> tool: TimelineTool.select;
     in property <float> playhead;
+    /// The edit's length: the phone's scrub bar runs exactly this far.
+    in property <float> duration;
     in property <float> frame-rate: 30;
     /// Seconds at the left edge of the lanes.
     in property <float> scroll-left;
@@ -1064,16 +1091,29 @@ export component Lanes inherits Rectangle {
                         background: Theme.line-strong;
                     }
 
+                    // Four minor marks between majors on a phone.
+                    for minor in (root.phone ? 4 : 0): Rectangle {
+                        x: (minor + 1) * root.tick * root.px-per-second / 5;
+                        y: parent.height - 4px;
+                        width: 1px;
+                        height: 4px;
+                        background: Theme.line;
+                    }
+
                     Text {
                         x: 5px;
                         y: 0;
                         width: parent.width - 7px;
                         height: parent.height - 7px;
-                        // "0s", "2s", "1:04" on a phone, as VN spells them.
+                        // "0s", "2s", "0.5s", "1:04" on a phone, as VN spells
+                        // them: whole seconds, or the tick's own decimals
+                        // when the ladder is finer than a second.
                         text: !root.phone
                             ? Fmt.frames-timecode(parent.seconds, root.frame-rate)
-                            : parent.seconds < 60 ? "\{Math.round(parent.seconds)}s"
-                            : Fmt.short-duration(parent.seconds);
+                            : parent.seconds >= 60
+                                ? Fmt.short-duration(parent.seconds)
+                            : root.tick >= 1 ? "\{Math.round(parent.seconds)}s"
+                            : "\{Fmt.round-to(parent.seconds, 2)}s";
                         color: Theme.fg-dim;
                         font-size: Theme.fs-xs;
                         vertical-alignment: center;
@@ -1086,6 +1126,18 @@ export component Lanes inherits Rectangle {
                     width: parent.width;
                     height: 1px;
                     background: Theme.line;
+                }
+
+                // The phone's scrub bar: the edit's length, exactly, in the
+                // accent along the top of the ruler. The ruler under it is
+                // what takes the finger.
+                if root.phone && root.duration > 0: Rectangle {
+                    x: root.at(0);
+                    y: 1px;
+                    width: Math.max(2px, root.duration * root.px-per-second);
+                    height: 5px;
+                    border-radius: 2.5px;
+                    background: #ffd60a;
                 }
 
                 // The ruler is the scrub strip. Dragging in the lanes draws a
