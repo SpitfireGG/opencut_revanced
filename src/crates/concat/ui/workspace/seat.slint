@@ -37,6 +37,8 @@ export component Seat inherits Rectangle {
     in-out property <int> library-page;
     /// The one inspector section to show; see ConfigPane.only-section.
     in property <string> only-section;
+    /// The monitor's Reels safe zones; see StageOverlay.
+    in property <bool> safe-zones;
 
     /// Its corner button was used.
     callback picked(kind: PaneKind);
@@ -151,6 +153,7 @@ export component Seat inherits Rectangle {
             width: root.width;
             height: root.height;
             bare: root.phone;
+            safe-zones: root.safe-zones;
 
             pane-picked(kind) => { root.picked(kind); }
             pane-seat: root.index;

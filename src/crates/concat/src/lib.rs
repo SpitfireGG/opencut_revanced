@@ -157,6 +157,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         app.set_voices(ModelRc::from(models.voices.clone()));
         editor.set_seats(ModelRc::from(models.seats.clone()));
         editor.set_dividers(ModelRc::from(models.dividers.clone()));
+        editor.set_highlights(ModelRc::from(models.highlights.clone()));
         app.set_recents(ModelRc::from(models.recents.clone()));
         editor.set_text_presets(ModelRc::from(models.text_presets.clone()));
     }
@@ -1120,6 +1121,15 @@ pub fn run() -> Result<(), slint::PlatformError> {
     }));
     app.on_captions_size_changed(on_window!(|state, index: i32| {
         state.captions.size = (index.max(0) as usize).min(2);
+    }));
+    app.on_captions_style_changed(on_window!(|state, index: i32| {
+        state.captions.style = (index.max(0) as usize).min(1);
+    }));
+    editor.on_highlights_find(on_window!(|state, seconds: f32| {
+        state.find_highlights(f64::from(seconds));
+    }));
+    editor.on_highlight_use(on_window!(|state, index: i32| {
+        state.use_highlight(index.max(0) as usize);
     }));
     app.on_captions_begin(on_window!(|state| {
         state.captions_run();

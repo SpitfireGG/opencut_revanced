@@ -26,7 +26,9 @@ use std::sync::{Arc, Mutex};
 use concat_host::{AppDirs, SingleFlight};
 use concat_media::{AudioDecoder, AudioOptions, SampleFormat};
 use serde::{Deserialize, Serialize};
-use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use whisper_rs::{
+    FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperSegment,
+};
 
 use crate::DownloadProgress;
 
@@ -173,6 +175,21 @@ pub struct Segment {
     /// Seconds from the window's start.
     pub end: f64,
     /// What was said.
+    pub text: String,
+    /// The same words one at a time, for captions that show each as it is
+    /// said. Empty when whisper gave no token times.
+    pub words: Vec<Word>,
+}
+
+/// One spoken word, in seconds relative to the transcribed window's start.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Word {
+    /// Seconds from the window's start.
+    pub start: f64,
+    /// Seconds from the window's start.
+    pub end: f64,
+    /// The word, without its leading space.
     pub text: String,
 }
 
@@ -392,6 +409,8 @@ impl Transcriber {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
+        // Per-token times, which is what word-by-word captions are cut from.
+        params.set_token_timestamps(true);
         // The raw hooks, not `set_abort_callback_safe`. whisper-rs 0.16's
         // safe one hands whisper a pointer to a boxed trait object with a
         // trampoline typed for the closure itself, so whisper reads the
@@ -422,7 +441,9 @@ impl Transcriber {
                 let start = segment.start_timestamp() as f64 / 100.0;
                 let end = segment.end_timestamp() as f64 / 100.0;
                 let text = segment.to_str_lossy().ok()?.trim().to_owned();
-                keep_segment(start, end, text)
+                let mut kept = keep_segment(start, end, text)?;
+                kept.words = words_of(&segment);
+                Some(kept)
             })
             .collect())
     }
@@ -445,12 +466,71 @@ fn keep_segment(start: f64, end: f64, text: String) -> Option<Segment> {
     if text.is_empty() || (text.starts_with('[') && text.ends_with(']')) {
         return None;
     }
-    (end > start).then_some(Segment { start, end, text })
+    (end > start).then_some(Segment {
+        start,
+        end,
+        text,
+        words: Vec::new(),
+    })
+}
+
+/// A segment's tokens, as words with their times.
+fn words_of(segment: &WhisperSegment) -> Vec<Word> {
+    let tokens = (0..segment.n_tokens()).filter_map(|index| {
+        let token = segment.get_token(index)?;
+        let text = token.to_str_lossy().ok()?.into_owned();
+        let data = token.token_data();
+        // Centiseconds, as the segment's own.
+        Some((text, data.t0 as f64 / 100.0, data.t1 as f64 / 100.0))
+    });
+    join_tokens(tokens)
+}
+
+/// Whisper's tokens are pieces of words: a piece that starts with a space
+/// starts a word, and the rest belong to the word before. Its markers -
+/// `[_BEG_]`, `<|endoftext|>` - are not words at all.
+fn join_tokens(tokens: impl Iterator<Item = (String, f64, f64)>) -> Vec<Word> {
+    let mut words: Vec<Word> = Vec::new();
+    for (text, start, end) in tokens {
+        if text.starts_with("[_") || text.starts_with("<|") || text.trim().is_empty() {
+            continue;
+        }
+        match words.last_mut() {
+            Some(word) if !text.starts_with(' ') => {
+                word.text.push_str(&text);
+                word.end = word.end.max(end);
+            }
+            _ => words.push(Word {
+                start,
+                end: end.max(start),
+                text: text.trim().to_owned(),
+            }),
+        }
+    }
+    words
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tokens_join_into_words_and_markers_drop_out() {
+        let tokens = [
+            ("[_BEG_]", 0.0, 0.0),
+            (" Hel", 0.1, 0.3),
+            ("lo", 0.3, 0.5),
+            (" world", 0.6, 1.0),
+            ("!", 1.0, 1.1),
+            ("<|endoftext|>", 1.1, 1.1),
+        ]
+        .map(|(text, start, end)| (text.to_owned(), start, end));
+        let words = join_tokens(tokens.into_iter());
+        let texts: Vec<&str> = words.iter().map(|word| word.text.as_str()).collect();
+        assert_eq!(texts, ["Hello", "world!"]);
+        assert_eq!((words[0].start, words[0].end), (0.1, 0.5));
+        assert_eq!((words[1].start, words[1].end), (0.6, 1.1));
+    }
 
     #[test]
     fn stage_directions_and_degenerate_spans_are_not_captions() {

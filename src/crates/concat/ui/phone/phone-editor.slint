@@ -148,6 +148,10 @@ export component PhoneEditor inherits Rectangle {
     property <string> section;
     /// The monitor alone, the timeline and tools put away.
     property <bool> full;
+    /// Instagram's Reels interface drawn over a portrait frame.
+    property <bool> safe-zones: true;
+    /// The highlight length the sheet searches for, in seconds.
+    property <float> highlight-length: 30;
 
     property <bool> has-clip: Editor.selected-clip.present;
     property <ClipKind> kind: Editor.selected-clip.kind;
@@ -163,7 +167,8 @@ export component PhoneEditor inherits Rectangle {
     // A clip sheet is about the selection; when the selection goes, so does
     // the sheet, rather than showing the project's details in its place.
     changed has-clip => {
-        if (root.sheet == "clip" || (root.sheet == "library" && root.library-page >= 3)) {
+        if (root.sheet == "clip" || root.sheet == "highlights"
+            || (root.sheet == "library" && root.library-page >= 3)) {
             root.close();
         }
     }
@@ -218,6 +223,10 @@ export component PhoneEditor inherits Rectangle {
         else if (tool.id == "freeze") { Editor.menu-selected("freeze"); }
         else if (tool.id == "detach") { Editor.menu-selected("detach"); }
         else if (tool.id == "project") { root.open("project", tool.id, tool.label); }
+        else if (tool.id == "highlights") { root.open("highlights", tool.id, tool.label); }
+        else if (tool.id == "fit-width") { Editor.menu-selected("fit-width"); }
+        else if (tool.id == "enhance") { Editor.menu-selected("enhance"); }
+        else if (tool.id == "duck") { Editor.menu-selected("duck"); }
         // everything else is one of the inspector's sections
         else {
             root.section = tool.id == "edit" || tool.id == "cutout" ? "Basic"
@@ -248,6 +257,8 @@ export component PhoneEditor inherits Rectangle {
     ];
     property <PhoneTool> back-tool: { id: "back", glyph: Glyph.chevron-left, label: I18n.t("Back") };
     property <[PhoneTool]> video-tools: [
+        { id: "highlights", glyph: Glyph.sparkle, label: I18n.t("Highlights") },
+        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
         { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
         { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
         { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
@@ -257,13 +268,16 @@ export component PhoneEditor inherits Rectangle {
         { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
         { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
         { id: "adjust", glyph: Glyph.sun, label: I18n.t("Adjust") },
-        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
+        { id: "enhance", glyph: Glyph.sparkle, label: I18n.t("Enhance voice") },
+        { id: "duck", glyph: Glyph.volume-off, label: I18n.t("Auto duck") },
+        { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
         { id: "detach", glyph: Glyph.music, label: I18n.t("Detach audio") },
         { id: "freeze", glyph: Glyph.image, label: I18n.t("Freeze") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> image-tools: [
+        { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
         { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
         { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
         { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
@@ -276,6 +290,8 @@ export component PhoneEditor inherits Rectangle {
     ];
     property <[PhoneTool]> audio-tools: [
         { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
+        { id: "duck", glyph: Glyph.volume-off, label: I18n.t("Auto duck") },
+        { id: "enhance", glyph: Glyph.sparkle, label: I18n.t("Enhance voice") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
         { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
         { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
@@ -471,6 +487,15 @@ export component PhoneEditor inherits Rectangle {
         height: root.monitor-h;
         kind: PaneKind.preview;
         phone: true;
+        safe-zones: root.safe-zones;
+    }
+
+    // The Reels safe zones, on and off.
+    BarButton {
+        x: root.width - self.width - 8px;
+        y: root.bar-h + 8px;
+        glyph: root.safe-zones ? Glyph.eye : Glyph.eye-off;
+        clicked => { root.safe-zones = !root.safe-zones; }
     }
 
     BarButton {
@@ -805,6 +830,105 @@ export component PhoneEditor inherits Rectangle {
                     kind: PaneKind.inspector;
                     phone: true;
                     only-section: root.sheet == "clip" ? root.section : "";
+                }
+
+                if root.sheet == "highlights": Flickable {
+                    viewport-height: finds.preferred-height;
+
+                    finds := VerticalLayout {
+                        width: parent.width;
+                        padding: 12px;
+                        spacing: 10px;
+
+                        Text {
+                            text: I18n.t("Finds the liveliest stretches of the selected clip's sound. Each one becomes its own 9:16 timeline.");
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs;
+                            wrap: word-wrap;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+
+                            for seconds in [15, 30, 60]: Rectangle {
+                                height: 44px;
+                                horizontal-stretch: 1;
+                                border-radius: Theme.r;
+                                background: root.highlight-length == seconds
+                                    ? Theme.accent-soft : Theme.field;
+                                border-width: root.highlight-length == seconds ? 1px : 0px;
+                                border-color: Theme.accent;
+
+                                Text {
+                                    width: 100%;
+                                    height: 100%;
+                                    text: "\{seconds} s";
+                                    color: Theme.fg;
+                                    font-size: Theme.fs-input;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    clicked => { root.highlight-length = seconds; }
+                                }
+                            }
+
+                            PillButton {
+                                label: I18n.t("Find");
+                                clicked => { Editor.highlights-find(root.highlight-length); }
+                            }
+                        }
+
+                        for found[i] in Editor.highlights: Rectangle {
+                            height: 60px;
+                            border-radius: Theme.r;
+                            background: Theme.field;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 8px;
+                                spacing: 12px;
+
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    spacing: 6px;
+
+                                    Text {
+                                        text: found.range;
+                                        color: Theme.fg;
+                                        font-family: Theme.font-technical;
+                                        font-size: Theme.fs-input;
+                                    }
+                                    Rectangle {
+                                        height: 4px;
+                                        border-radius: 2px;
+                                        background: Theme.well;
+
+                                        Rectangle {
+                                            x: 0;
+                                            width: parent.width * found.score;
+                                            height: parent.height;
+                                            border-radius: 2px;
+                                            background: Theme.accent;
+                                        }
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    PillButton {
+                                        label: I18n.t("Make Reel");
+                                        clicked => {
+                                            Editor.highlight-use(i);
+                                            root.close();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if root.sheet == "ratio": Flickable {

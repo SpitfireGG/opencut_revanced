@@ -35,6 +35,8 @@ export struct CaptionsSheetData {
     placement: int,
     /// 0 Small, 1 Medium, 2 Large
     size: int,
+    /// 0 a line at a time, 1 viral: a few words at a time, popping in
+    style: int,
     running: bool,
     /// 0..1
     progress: float,
@@ -52,6 +54,7 @@ export component CaptionsDialog inherits Modal {
     callback text-edited(text: string);
     callback model-changed(index: int);
     callback placement-changed(index: int);
+    callback style-changed(index: int);
     callback size-changed(index: int);
     callback begin();
     callback cancel();
@@ -144,6 +147,16 @@ export component CaptionsDialog inherits Modal {
 
         if !root.data.running: DialogSection {
             title: I18n.t("Captions");
+
+            // Viral needs the words' own times, so it is for sound only.
+            if root.data.from-sound: DialogRow {
+                label: I18n.t("Style");
+                SegmentedControl {
+                    options: [I18n.t("Classic"), I18n.t("Viral")];
+                    current: root.data.style;
+                    changed(index) => { root.style-changed(index); }
+                }
+            }
 
             DialogRow {
                 label: I18n.t("Placement");

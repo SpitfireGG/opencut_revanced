@@ -485,8 +485,56 @@ component Guide inherits Rectangle {
 
 /// The layer over the stage: the floor that takes a press on a picture or on
 /// nothing, and one StageItem per selected picture above it.
+/// Part of a Reel that Instagram draws its own interface over, in fractions
+/// of a 9:16 frame.
+struct SafeZone {
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    label: string,
+}
+
+/// Where a selected picture's box and another box overlap, painted over
+/// the overlap. Boxes are taken unturned: close enough to warn by.
+component Overlap inherits Rectangle {
+    in property <float> x0;
+    in property <float> y0;
+    in property <float> x1;
+    in property <float> y1;
+    in property <StageItemData> item;
+    in property <length> frame-w;
+    in property <length> frame-h;
+    in property <color> ink;
+
+    out property <float> l: Math.max(root.x0, root.item.cx - root.item.w / 2);
+    out property <float> r: Math.min(root.x1, root.item.cx + root.item.w / 2);
+    out property <float> t: Math.max(root.y0, root.item.cy - root.item.h / 2);
+    out property <float> b: Math.min(root.y1, root.item.cy + root.item.h / 2);
+
+    visible: root.item.selected && root.l < root.r && root.t < root.b;
+    // Relative to the box the overlap is measured against.
+    x: (root.l - root.x0) * root.frame-w;
+    y: (root.t - root.y0) * root.frame-h;
+    width: Math.max(0px, (root.r - root.l) * root.frame-w);
+    height: Math.max(0px, (root.b - root.t) * root.frame-h);
+    background: root.ink.with-alpha(0.3);
+    border-width: 2px;
+    border-color: root.ink;
+}
+
 component StageOverlay inherits Rectangle {
     in property <[StageItemData]> items;
+    /// Draw Instagram's Reels interface over a portrait frame, and mark
+    /// where a selected picture runs under it or over another picture.
+    in property <bool> safe-zones;
+    // The Reels layout: the top bar, the profile and caption block, and the
+    // column of buttons. Studio::SAFE_ZONE_EDGES snaps to the same lines.
+    property <[SafeZone]> zones: [
+        { x0: 0, y0: 0, x1: 1, y1: 0.10, label: I18n.t("Top bar") },
+        { x0: 0, y0: 0.78, x1: 0.82, y1: 1, label: I18n.t("Profile & caption") },
+        { x0: 0.84, y0: 0.45, x1: 1, y1: 0.92, label: I18n.t("Buttons") },
+    ];
     in property <[StageGuideData]> guides;
     /// The brush stroke in flight, and whether a press paints; see Editor.
     in property <string> stroke-path;
@@ -565,6 +613,64 @@ component StageOverlay inherits Rectangle {
         guide: guide;
     }
 
+    // The safe zones, and what has strayed into them. Nothing here takes a
+    // press: the floor under it does.
+    if root.safe-zones: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+
+        for zone in root.zones: Rectangle {
+            x: zone.x0 * root.width;
+            y: zone.y0 * root.height;
+            width: (zone.x1 - zone.x0) * root.width;
+            height: (zone.y1 - zone.y0) * root.height;
+            background: #00000033;
+            border-width: 1px;
+            border-color: #ffffff66;
+
+            Text {
+                x: 4px;
+                y: 2px;
+                text: zone.label;
+                color: #ffffffb3;
+                font-size: Theme.fs-xs;
+            }
+
+            for entry in root.items: Overlap {
+                x0: zone.x0;
+                y0: zone.y0;
+                x1: zone.x1;
+                y1: zone.y1;
+                item: entry;
+                frame-w: root.width;
+                frame-h: root.height;
+                ink: Theme.danger;
+            }
+        }
+
+        // One picture over another: the overlap, in the accent.
+        for other in root.items: Rectangle {
+            x: (other.cx - other.w / 2) * root.width;
+            y: (other.cy - other.h / 2) * root.height;
+            width: other.w * root.width;
+            height: other.h * root.height;
+
+            for entry in root.items: Overlap {
+                x0: other.cx - other.w / 2;
+                y0: other.cy - other.h / 2;
+                x1: other.cx + other.w / 2;
+                y1: other.cy + other.h / 2;
+                item: entry;
+                frame-w: root.width;
+                frame-h: root.height;
+                ink: Theme.accent;
+                visible: entry.selected && !other.selected && self.l < self.r && self.t < self.b;
+            }
+        }
+    }
+
     // The stroke being painted, over everything else: the line the pointer
     // is drawing, translucent so the picture shows through it, in the
     // accent for a brush and in red for a tool that takes away.
@@ -603,6 +709,8 @@ export component PreviewPane inherits Rectangle {
     /// The stage alone, without the header or the transport: the phone
     /// layout draws its own transport under it.
     in property <bool> bare;
+    /// Instagram's Reels interface over a portrait frame; see StageOverlay.
+    in property <bool> safe-zones;
 
     // ── what the output is ───────────────────────────────────────────────
     in property <int> output-width: 1920;
@@ -920,6 +1028,7 @@ export component PreviewPane inherits Rectangle {
                 stroke-width: root.stroke-width;
                 stroke-erase: root.stroke-erase;
                 painting: root.painting;
+                safe-zones: root.safe-zones && root.output-height > root.output-width;
                 pressed(x, y, additive) => { root.stage-pressed(x, y, additive); }
                 grip-pressed(id, grip, x, y) => { root.stage-grip-pressed(id, grip, x, y); }
                 dragged(x, y, snap) => { root.stage-dragged(x, y, snap); }

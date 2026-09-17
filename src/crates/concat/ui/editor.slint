@@ -31,6 +31,14 @@ import {
 // A global has no such arithmetic. Rust binds it once, any number of instances
 // read it, and a seat is then only a box with a name in it — see Seat, which
 // is the whole of what forwarding is left.
+/// A stretch of a clip worth a Reel; see Studio::find_highlights.
+export struct HighlightData {
+    /// "0:42 – 1:12"
+    range: string,
+    /// 0..1, against the best one found.
+    score: float,
+}
+
 export global Editor {
     // ── the layout ───────────────────────────────────────────────────────
     //
@@ -48,6 +56,14 @@ export global Editor {
     /// the system, which leaves the app.
     in-out property <bool> back-consumable;
     in-out property <int> back-token;
+
+    // ── highlights ──
+    /// The last search's finds, best first.
+    in-out property <[HighlightData]> highlights;
+    /// Look through the selected clip for stretches this many seconds long.
+    callback highlights-find(seconds: float);
+    /// Make a Reel of one of them.
+    callback highlight-use(index: int);
 
     /// The workspace's own box, on the way *up*. Rust lays out in pixels
     /// because the minimum a pane may be squeezed to is a number of pixels,

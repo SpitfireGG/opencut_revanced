@@ -77,6 +77,23 @@ pub const OUTPUTS: [(i32, i32); 10] = [
     (1080, 1350),
 ];
 
+/// Instagram's Reels interface over a portrait frame, as lines a dragged
+/// picture snaps to - the button column's left edge, and the bottom of the
+/// top bar, the top of the buttons and the top of the profile block. The
+/// monitor draws the same zones; see StageOverlay in preview-pane.slint.
+const SAFE_ZONE_XS: [f64; 1] = [0.84];
+const SAFE_ZONE_YS: [f64; 3] = [0.10, 0.45, 0.78];
+
+/// A moment worth a Reel, found in a clip's sound; see `find_highlights`.
+pub struct Highlight {
+    /// Seconds into the media where it starts.
+    pub start: f64,
+    /// Seconds into the media where it ends.
+    pub end: f64,
+    /// 0..1, against the best one found.
+    pub score: f32,
+}
+
 /// Shortest clip the editor will make: a sixtieth of a second. Trims and
 /// splits both floor at this, as the engine's own `MIN_CLIP_DURATION` does.
 pub const MIN_DURATION: f32 = 1.0 / 60.0;
@@ -233,6 +250,8 @@ pub struct CaptionsSheet {
     pub placement: usize,
     /// 0 small, 1 medium, 2 large.
     pub size: usize,
+    /// 0 a line at a time, 1 viral: a few words at a time, popping in.
+    pub style: usize,
     pub running: bool,
     pub progress: f32,
     /// Why the last run failed, when it did.
@@ -635,6 +654,7 @@ pub struct Models {
     pub recents: Rc<VecModel<RecentProjectData>>,
     /// The Text page's presets, published once from the loaded list.
     pub text_presets: Rc<VecModel<TextPresetData>>,
+    pub highlights: Rc<VecModel<HighlightData>>,
 }
 
 impl Models {
@@ -645,6 +665,7 @@ impl Models {
             clips: Rc::new(VecModel::default()),
             stage: Rc::new(VecModel::default()),
             guides: Rc::new(VecModel::default()),
+            highlights: Rc::new(VecModel::default()),
             media: Rc::new(VecModel::default()),
             video_effects: Rc::new(VecModel::default()),
             audio_effects: Rc::new(VecModel::default()),
@@ -797,6 +818,9 @@ pub struct Studio {
     pub gesture: Gesture,
     /// The snap lines of a stage move in flight; empty between moves.
     pub stage_guides: Vec<StageGuideData>,
+    /// The last highlight search, and the media it searched.
+    pub highlights: Vec<Highlight>,
+    pub highlight_media: Option<String>,
     /// Where the inspector should go, and a count that changes every time
     /// something is applied from the library; see `Editor.inspector-jump-token`.
     pub inspector_jump: (i32, &'static str, &'static str),
@@ -1467,6 +1491,8 @@ impl Studio {
             divider_press: None,
             gesture: Gesture::None,
             stage_guides: Vec::new(),
+            highlights: Vec::new(),
+            highlight_media: None,
             inspector_jump: (0, "", ""),
             audition: None,
             revision: 0,
@@ -4128,6 +4154,10 @@ impl Studio {
                         // staying put.
                         let mut xs = vec![0.0, 0.5, 1.0];
                         let mut ys = vec![0.0, 0.5, 1.0];
+                        if height > width {
+                            xs.extend(SAFE_ZONE_XS);
+                            ys.extend(SAFE_ZONE_YS);
+                        }
                         for other in self.stage_clips() {
                             if origins.iter().any(|origin| origin.clip == other.id) {
                                 continue;
@@ -5160,7 +5190,11 @@ impl Studio {
             let base = self.start.name.clone();
             for n in 1..100 {
                 self.start.error.clear();
-                self.start.name = if n == 1 { base.clone() } else { format!("{base} {n}") };
+                self.start.name = if n == 1 {
+                    base.clone()
+                } else {
+                    format!("{base} {n}")
+                };
                 self.create_project();
                 if !self.on_start || !self.start.error.contains("already exists") {
                     break;
@@ -5710,6 +5744,10 @@ impl Studio {
             move |studio, _, _, result| {
                 studio.captions.running = false;
                 match result {
+                    Ok(segments) if studio.captions.style == 1 => {
+                        studio.captions.open = false;
+                        studio.viral_captions(&clip, &segments);
+                    }
                     Ok(segments) => {
                         let commands: Vec<Command> = segments
                             .into_iter()
@@ -6251,6 +6289,17 @@ impl Studio {
         editor.set_preview_frame(self.preview.clone());
         sync(&models.stage, self.stage_items());
         sync(&models.guides, self.stage_guides.clone());
+        sync(
+            &models.highlights,
+            self.highlights
+                .iter()
+                .map(|found| HighlightData {
+                    range: format!("{} – {}", short_time(found.start), short_time(found.end))
+                        .into(),
+                    score: found.score,
+                })
+                .collect(),
+        );
         let (path, width, erase) = self.stroke_overlay();
         editor.set_stroke_path(path.into());
         editor.set_stroke_width(width);
@@ -7118,6 +7167,7 @@ impl Studio {
             model: self.captions.model as i32,
             placement: self.captions.placement as i32,
             size: self.captions.size as i32,
+            style: self.captions.style as i32,
             running: self.captions.running,
             progress: self.captions.progress,
             ready: !transcribers.is_empty(),
@@ -7803,6 +7853,9 @@ impl Studio {
                 });
             }
             "lock" => self.toggle_lock(&clip.track_id),
+            "fit-width" => self.fit_width(&clip),
+            "enhance" => self.enhance_voice(&clip),
+            "duck" => self.duck_under_speech(&clip),
             // A clip that is part of the selection takes the selection with
             // it: Delete on one of five selected clips means the five.
             "delete" => {
@@ -7817,6 +7870,292 @@ impl Studio {
             }
             _ => {}
         }
+    }
+
+    /// Scales a picture so it spans the frame's width, centred across it:
+    /// a banner laid over a Reel.
+    fn fit_width(&mut self, clip: &Clip) {
+        if !clip.kind.is_visual() {
+            return;
+        }
+        let (half, _) = self.footprint(clip).half_bounds(self.output_size());
+        if half <= 0.0 {
+            return;
+        }
+        self.apply(Command::SetClipTransform {
+            clip_id: clip.id.clone(),
+            scale: Some((clip.scale * 0.5 / half).clamp(0.05, 8.0)),
+            offset_x: Some(0.0),
+            offset_y: None,
+            rotation: None,
+            stretch_x: None,
+            stretch_y: None,
+        });
+    }
+
+    /// One tap of voice clean-up: the room taken out, then the level
+    /// brought up to a steady loudness. One undo step.
+    fn enhance_voice(&mut self, clip: &Clip) {
+        if !matches!(clip.kind, model::ClipKind::Video | model::ClipKind::Audio) {
+            self.notify(&t("Select a clip with sound first"), true);
+            return;
+        }
+        let mut filters = clip.filters.clone();
+        for id in ["concat.enhance-voice", "concat.loudness"] {
+            if !filters.iter().any(|entry| entry.id == id) {
+                filters.push(AppliedFilter::new(id));
+            }
+        }
+        self.apply(Command::UpdateClip {
+            clip_id: clip.id.clone(),
+            patch: ClipPatch {
+                filters: Some(filters),
+                ..Default::default()
+            },
+        });
+        self.notify(&t("Voice enhanced"), false);
+    }
+
+    /// A media stream's loudness in dBFS, one value per `step` seconds of
+    /// source, from the peaks the lanes already hold. None until they are
+    /// decoded.
+    fn loudness(&self, art: &str, step: f64) -> Option<Vec<f32>> {
+        let peaks = self.peaks.get(art)?;
+        let per = ((f64::from(peaks.buckets_per_second) * step).round() as usize).max(1);
+        let count = peaks.min.len().min(peaks.max.len());
+        Some(
+            (0..count)
+                .step_by(per)
+                .map(|from| {
+                    let level = (from..(from + per).min(count))
+                        .map(|i| peaks.max[i].max(-peaks.min[i]))
+                        .fold(0.0_f32, f32::max);
+                    20.0 * level.max(1e-5).log10()
+                })
+                .collect(),
+        )
+    }
+
+    /// Dips `music` wherever another sound on the timeline is speaking:
+    /// volume keys down to a quarter before each stretch of speech and back
+    /// up after it. One undo step.
+    fn duck_under_speech(&mut self, music: &Clip) {
+        const STEP: f64 = 0.1;
+        const LOUD: f32 = -35.0;
+        const LOW: f64 = 0.25;
+        const RAMP: f64 = 0.25;
+        let (from, to) = (music.start, music.start + music.duration);
+        let mut speech: Vec<(f64, f64)> = Vec::new();
+        for other in &self.timeline().clips {
+            let heard = matches!(other.kind, model::ClipKind::Video | model::ClipKind::Audio)
+                && other.volume > 0.0
+                && other.muted != Some(true);
+            if other.id == music.id
+                || !heard
+                || other.start >= to
+                || other.start + other.duration <= from
+            {
+                continue;
+            }
+            let Some(levels) = self.loudness(&art_key(&other.media_id, other.audio_stream), STEP)
+            else {
+                continue;
+            };
+            let rate = other.speed.max(0.01);
+            for (index, level) in levels.iter().enumerate() {
+                if *level < LOUD {
+                    continue;
+                }
+                let at = other.start + (index as f64 * STEP - other.source_start) / rate;
+                let (a, b) = (
+                    at.max(other.start).max(from),
+                    (at + STEP / rate).min(other.start + other.duration).min(to),
+                );
+                if a < b {
+                    speech.push((a, b));
+                }
+            }
+        }
+        speech.sort_by(|x, y| x.0.total_cmp(&y.0));
+        let mut merged: Vec<(f64, f64)> = Vec::new();
+        for (a, b) in speech {
+            match merged.last_mut() {
+                Some(last) if a - last.1 < 0.4 => last.1 = last.1.max(b),
+                _ => merged.push((a, b)),
+            }
+        }
+        if merged.is_empty() {
+            self.notify(&t("No speech under this clip to duck for"), true);
+            return;
+        }
+        let length = music.duration.max(MIN_DURATION as f64);
+        let base = music.volume;
+        let key = |at: f64, value: f64| Command::SetClipKey {
+            clip_id: music.id.clone(),
+            property: model::KeyProperty::Volume,
+            at: ((at - from) / length).clamp(0.0, 1.0),
+            value,
+            ease: model::KeyEase::default(),
+        };
+        let mut commands = Vec::new();
+        for (a, b) in merged {
+            commands.push(key(a - RAMP, base));
+            commands.push(key(a, base * LOW));
+            commands.push(key(b, base * LOW));
+            commands.push(key(b + RAMP, base));
+        }
+        self.apply(Command::Batch { commands });
+        self.notify(&t("Music ducked under speech"), false);
+    }
+
+    /// Looks through the selected clip's whole file for the loudest, most
+    /// alive stretches of `length` seconds, and keeps the best five that do
+    /// not overlap. The sound is the signal: speech and action are loud and
+    /// varied, dead air is neither.
+    pub fn find_highlights(&mut self, length: f64) {
+        const STEP: f64 = 0.5;
+        self.highlights.clear();
+        let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id).cloned()) else {
+            self.notify(&t("Select a clip on the timeline first"), true);
+            return;
+        };
+        let Some(levels) = self.loudness(&art_key(&clip.media_id, clip.audio_stream), STEP) else {
+            self.notify(
+                &t("This clip's sound is still being read; try again in a moment"),
+                true,
+            );
+            return;
+        };
+        let span = ((length / STEP).round() as usize).max(1);
+        let picked = best_windows(&levels, span, 5);
+        if picked.is_empty() {
+            self.notify(&t("The clip is shorter than that"), true);
+            return;
+        }
+        let best = picked[0].0.max(1e-3);
+        self.highlights = picked
+            .into_iter()
+            .map(|(score, from)| Highlight {
+                start: from as f64 * STEP,
+                end: (from + span) as f64 * STEP,
+                score: (score / best).clamp(0.0, 1.0),
+            })
+            .collect();
+        self.highlight_media = Some(clip.media_id);
+    }
+
+    /// Turns a highlight into a Reel: a new timeline holding just that
+    /// stretch, at 9:16 4K. The edit it came from is left alone.
+    pub fn use_highlight(&mut self, index: usize) {
+        let (Some((start, end)), Some(media_id)) = (
+            self.highlights
+                .get(index)
+                .map(|found| (found.start, found.end)),
+            self.highlight_media.clone(),
+        ) else {
+            return;
+        };
+        let Some(timeline_id) = self.apply(Command::AddTimeline) else {
+            return;
+        };
+        self.selection.clear();
+        self.apply(Command::SelectTimeline { timeline_id });
+        let Some(clip_id) = self.apply(Command::AddClipAtFirstFree {
+            media_id,
+            start: 0.0,
+        }) else {
+            return;
+        };
+        let duration = self.clip(&clip_id).map_or(0.0, |clip| clip.duration);
+        self.apply(Command::TrimClip {
+            clip_id: clip_id.clone(),
+            edge: TrimEdge::End,
+            delta: end.min(duration) - duration,
+        });
+        self.apply(Command::TrimClip {
+            clip_id: clip_id.clone(),
+            edge: TrimEdge::Start,
+            delta: start,
+        });
+        let track_id = self
+            .clip(&clip_id)
+            .map(|clip| clip.track_id.clone())
+            .unwrap_or_default();
+        self.apply(Command::MoveClips {
+            moves: vec![ClipMove {
+                clip_id: clip_id.clone(),
+                start: 0.0,
+                track_id,
+            }],
+        });
+        self.set_output(6);
+        self.selection = vec![clip_id];
+        self.seek(0.0);
+        self.highlights.clear();
+        self.notify(&t("Made a Reel from the highlight"), false);
+    }
+
+    /// Captions the way Reels wear them: two or three words at a time, big
+    /// and bold with a heavy outline, each group popping in as it is said,
+    /// every third one in yellow. Two undo steps: the titles, then their
+    /// entrances.
+    fn viral_captions(&mut self, clip: &Clip, segments: &[concat_speech::transcribe::Segment]) {
+        let rate = clip.speed.max(0.01);
+        let words: Vec<&concat_speech::transcribe::Word> =
+            segments.iter().flat_map(|segment| &segment.words).collect();
+        let groups = word_groups(&words);
+        if groups.is_empty() {
+            self.notify(&t("Nothing was said in that clip"), true);
+            return;
+        }
+        let before: HashSet<String> = self
+            .timeline()
+            .clips
+            .iter()
+            .map(|clip| clip.id.clone())
+            .collect();
+        let commands: Vec<Command> = groups
+            .iter()
+            .enumerate()
+            .map(|(index, (text, start, end))| Command::AddTextClip {
+                track_id: None,
+                start: clip.start + start / rate,
+                style: Some(TextStyle {
+                    content: text.to_uppercase(),
+                    font_family: "Helvetica Neue".to_owned(),
+                    font_size: 0.055,
+                    font_weight: 800.0,
+                    color: (if index % 3 == 2 { "#ffd60a" } else { "#ffffff" }).to_owned(),
+                    stroke_width: 0.006,
+                    stroke_color: "#000000".to_owned(),
+                    shadow: true,
+                    ..TextStyle::default()
+                }),
+                duration: Some(((end - start) / rate).max(0.2)),
+                // Above the profile block of a Reel; see SAFE_ZONE_YS.
+                offset_y: Some(0.12),
+            })
+            .collect();
+        let count = commands.len();
+        self.apply(Command::Batch { commands });
+        let pops: Vec<Command> = self
+            .timeline()
+            .clips
+            .iter()
+            .filter(|made| made.kind == model::ClipKind::Text && !before.contains(&made.id))
+            .map(|made| Command::SetClipAnimation {
+                clip_id: made.id.clone(),
+                slot: model::AnimationSlot::In,
+                animation: Some(model::ClipAnimation {
+                    preset: "Zoom In".to_owned(),
+                    duration: 0.12,
+                }),
+            })
+            .collect();
+        if !pops.is_empty() {
+            self.apply(Command::Batch { commands: pops });
+        }
+        self.notify(&tf("Added {0} captions", &[&count]), false);
     }
 
     /// Every clip on an unlocked lane.
@@ -7941,9 +8280,123 @@ fn wrap_caption(sentence: &str) -> Vec<String> {
     lines
 }
 
+/// "1:05", for a highlight's range.
+fn short_time(seconds: f64) -> String {
+    let whole = seconds.max(0.0).round() as u64;
+    format!("{}:{:02}", whole / 60, whole % 60)
+}
+
+/// The best `count` non-overlapping windows of `span` values in `levels`
+/// (dBFS), best first, as (score, first index). A window scores for being
+/// loud, for moving, and for how much of it is above a speaking level, and
+/// loses a little for starting or ending on a loud value - the middle of a
+/// word.
+fn best_windows(levels: &[f32], span: usize, count: usize) -> Vec<(f32, usize)> {
+    if span == 0 || levels.len() < span {
+        return Vec::new();
+    }
+    let level: Vec<f32> = levels
+        .iter()
+        .map(|db| ((db + 60.0) / 60.0).clamp(0.0, 1.0))
+        .collect();
+    let stride = (span / 6).max(1);
+    let mut scored: Vec<(f32, usize)> = (0..=level.len() - span)
+        .step_by(stride)
+        .map(|from| {
+            let window = &level[from..from + span];
+            let mean = window.iter().sum::<f32>() / span as f32;
+            let spread =
+                (window.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / span as f32).sqrt();
+            let speaking = window.iter().filter(|v| **v > 0.42).count() as f32 / span as f32;
+            let edges = level[from].max(level[from + span - 1]);
+            (mean + 0.5 * spread + 0.8 * speaking - 0.3 * edges, from)
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let mut picked: Vec<(f32, usize)> = Vec::new();
+    for (score, from) in scored {
+        if picked
+            .iter()
+            .all(|(_, held)| from + span <= *held || held + span <= from)
+        {
+            picked.push((score, from));
+            if picked.len() == count {
+                break;
+            }
+        }
+    }
+    picked
+}
+
+/// Words gathered into caption groups of at most three, broken early at a
+/// sentence mark or a pause, as (text, start, end).
+fn word_groups(words: &[&concat_speech::transcribe::Word]) -> Vec<(String, f64, f64)> {
+    let mut groups: Vec<(String, f64, f64)> = Vec::new();
+    let mut held = 0;
+    for word in words {
+        let pause = groups.last().is_some_and(|last| word.start - last.2 > 0.35);
+        match groups.last_mut() {
+            Some(last) if held < 3 && !pause => {
+                last.0.push(' ');
+                last.0.push_str(&word.text);
+                last.2 = word.end;
+                held += 1;
+            }
+            _ => {
+                groups.push((word.text.clone(), word.start, word.end));
+                held = 1;
+            }
+        }
+        if word.text.ends_with(['.', ',', '!', '?']) {
+            held = 3;
+        }
+    }
+    groups
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Footprint, Studio, script_captions};
+    use super::{Footprint, Studio, best_windows, script_captions, word_groups};
+
+    #[test]
+    fn highlights_find_the_loud_stretch_and_never_overlap() {
+        // Quiet, then ten loud varied values, then quiet.
+        let mut levels = vec![-60.0_f32; 40];
+        for (i, level) in levels.iter_mut().enumerate().skip(20).take(10) {
+            *level = if i % 2 == 0 { -10.0 } else { -20.0 };
+        }
+        let picked = best_windows(&levels, 10, 3);
+        assert_eq!(picked.len(), 3);
+        assert!((18..=21).contains(&picked[0].1), "best at {}", picked[0].1);
+        for (i, (_, a)) in picked.iter().enumerate() {
+            for (_, b) in picked.iter().skip(i + 1) {
+                assert!(a + 10 <= *b || b + 10 <= *a);
+            }
+        }
+        assert!(best_windows(&levels, 50, 3).is_empty());
+    }
+
+    #[test]
+    fn caption_groups_hold_three_words_and_break_on_pauses_and_marks() {
+        use concat_speech::transcribe::Word;
+        let word = |text: &str, start: f64| Word {
+            start,
+            end: start + 0.2,
+            text: text.to_owned(),
+        };
+        let words = [
+            word("one", 0.0),
+            word("two", 0.2),
+            word("three", 0.4),
+            word("four", 0.6),
+            word("five.", 0.8),
+            word("six", 1.0),
+            word("seven", 3.0),
+        ];
+        let refs: Vec<&Word> = words.iter().collect();
+        let texts: Vec<String> = word_groups(&refs).into_iter().map(|g| g.0).collect();
+        assert_eq!(texts, ["one two three", "four five.", "six", "seven"]);
+    }
 
     /// A script becomes one caption per sentence, a hand line break is
     /// kept, a long sentence wraps at its words, and each line is held for
