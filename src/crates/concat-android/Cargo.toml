@@ -48,6 +48,12 @@ runtime_libs = "../../vendor/sherpa-onnx/jniLibs"
 # repository's logo by scripts/generate-icons.sh.
 resources = "res"
 
+# AndroidX Core for WindowCompat (edge-to-edge display)
+[[package.metadata.android.maven]]
+group = "androidx.core"
+artifact = "core"
+version = "1.12.0"
+
 [package.metadata.android.sdk]
 # Android 8.0: AAudio, the audio path the engine plays through.
 min_sdk_version = 26
@@ -63,6 +69,7 @@ icon = "@mipmap/ic_launcher"
 # The editor keeps its own state across a rotation; the activity is not
 # recreated for one.
 [package.metadata.android.application.activity]
+name = "app.concat.editor.ConcatActivity"
 config_changes = "orientation|keyboardHidden|screenSize"
 launch_mode = "singleTop"
 

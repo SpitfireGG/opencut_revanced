@@ -6,10 +6,13 @@ package app.concat.editor;
 import android.app.Activity;
 import android.app.Fragment;
 import android.content.ClipData;
+import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
+import android.util.Log;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -104,16 +107,29 @@ public class ConcatFiles extends Fragment {
             filesPicked(new String[0]);
             return;
         }
+        
+        // Take persistable URI permission so we can access the files even if the activity is destroyed
+        final ContentResolver resolver = activity.getContentResolver();
+        for (Uri uri : uris) {
+            try {
+                resolver.takePersistableUriPermission(uri, 
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to take persistable URI permission: " + e);
+            }
+        }
+        
         // Off the UI thread: a video is big and the copy takes a while.
+        final Context appContext = activity.getApplicationContext();
         new Thread(new Runnable() {
             @Override
             public void run() {
                 List<String> paths = new ArrayList<String>();
-                File dir = new File(activity.getExternalFilesDir(null), "Imported");
+                File dir = new File(appContext.getExternalFilesDir(null), "Imported");
                 dir.mkdirs();
                 for (Uri uri : uris) {
-                    File out = unique(dir, displayName(activity, uri));
-                    if (copy(activity, uri, out)) {
+                    File out = unique(dir, displayName(appContext, uri));
+                    if (copy(appContext, uri, out)) {
                         paths.add(out.getAbsolutePath());
                     }
                 }
@@ -123,11 +139,11 @@ public class ConcatFiles extends Fragment {
     }
 
     /** The name the picker showed for the file, or one made from the URI. */
-    private static String displayName(Activity activity, Uri uri) {
+    private static String displayName(Context context, Uri uri) {
         String name = null;
         Cursor cursor = null;
         try {
-            cursor = activity.getContentResolver().query(uri, null, null, null, null);
+            cursor = context.getContentResolver().query(uri, null, null, null, null);
             if (cursor != null && cursor.moveToFirst()) {
                 int column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
                 if (column >= 0) {
@@ -167,11 +183,11 @@ public class ConcatFiles extends Fragment {
         }
     }
 
-    private static boolean copy(Activity activity, Uri uri, File out) {
+    private static boolean copy(Context context, Uri uri, File out) {
         InputStream in = null;
         OutputStream os = null;
         try {
-            in = activity.getContentResolver().openInputStream(uri);
+            in = context.getContentResolver().openInputStream(uri);
             if (in == null) {
                 return false;
             }
