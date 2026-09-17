@@ -22,8 +22,6 @@ public class ConcatActivity extends NativeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Enable edge-to-edge display: the window draws behind system bars
-        // WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-        // Platform equivalent:
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             getWindow().setDecorFitsSystemWindows(false);
         } else {
@@ -53,11 +51,5 @@ public class ConcatActivity extends NativeActivity {
             }
         }
         // Legacy flags already set above for API < 30
-    }
-    
-    @Override
-    public void onWindowInsetsChanged(WindowInsets insets) {
-        super.onWindowInsetsChanged(insets);
-        // The Slint backend should automatically pick up the insets from the window
     }
 }
