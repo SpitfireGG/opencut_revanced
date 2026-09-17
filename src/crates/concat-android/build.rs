@@ -9,7 +9,6 @@
 
 fn main() {
     println!("cargo:rerun-if-changed=java/ConcatFiles.java");
-    println!("cargo:rerun-if-changed=java/app/concat/editor/ConcatActivity.java");
     let target = std::env::var("TARGET").unwrap_or_default();
     if !target.contains("android") {
         return;
@@ -26,7 +25,6 @@ fn main() {
     let android_jar = android_build::android_jar(None).expect("no Android platform found");
     let compiled = android_build::JavaBuild::new()
         .file("java/ConcatFiles.java")
-        .file("java/app/concat/editor/ConcatActivity.java")
         .class_path(&android_jar)
         .classes_out_dir(&classes)
         .java_source_version(8)
