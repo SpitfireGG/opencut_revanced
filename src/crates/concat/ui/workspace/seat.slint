@@ -343,6 +343,7 @@ export component Seat inherits Rectangle {
             zoom-to-fit(width) => { Editor.zoom-to-fit(width); }
             zoom(factor, anchor) => { Editor.zoom(factor, anchor); }
             floor-pressed => { Editor.blur(); }
+            clip-edge-tapped(id, edge) => { Editor.edge-chip = edge; }
             scrubbed(seconds) => {
                 Editor.blur();
                 Editor.scrubbed(seconds);

@@ -263,12 +263,36 @@ pub fn pick_folder(title: &str, start: &str) -> Option<PathBuf> {
 /// What a phone does when asked for files: shows the system's picker and
 /// calls back, later, with what was chosen - an empty list for nothing.
 /// Installed by the phone's own crate before the window runs; see
-/// [`install_file_picker`].
+/// [`install_file_picker`]. The flag asks for the photo and video gallery
+/// rather than the document picker.
 #[cfg(any(target_os = "android", target_os = "ios"))]
-pub type FilePicker = Box<dyn Fn(Box<dyn FnOnce(Vec<PathBuf>) + Send>) + Send + Sync>;
+pub type FilePicker = Box<dyn Fn(bool, Box<dyn FnOnce(Vec<PathBuf>) + Send>) + Send + Sync>;
 
 #[cfg(any(target_os = "android", target_os = "ios"))]
 static FILE_PICKER: std::sync::OnceLock<FilePicker> = std::sync::OnceLock::new();
+
+/// A short tick from the phone's vibration motor, installed by the phone's
+/// own crate; see [`install_haptic`].
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub type Haptic = Box<dyn Fn() + Send + Sync>;
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+static HAPTIC: std::sync::OnceLock<Haptic> = std::sync::OnceLock::new();
+
+/// Installs what [`haptic_tick`] does. Once; a second call is ignored.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub fn install_haptic(tick: Haptic) {
+    let _ = HAPTIC.set(tick);
+}
+
+/// A tick you feel: a dragged picture has landed on the frame's centre.
+/// Nothing on a desktop.
+pub fn haptic_tick() {
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    if let Some(tick) = HAPTIC.get() {
+        tick();
+    }
+}
 
 /// Installs the picker a phone answers [`pick_files_async`] with. Once;
 /// a second call is ignored.
@@ -290,8 +314,24 @@ pub fn pick_files_async(
     filter: Option<(&str, &[&str])>,
     on_picked: impl FnOnce(Vec<PathBuf>) + Send + 'static,
 ) {
+    pick_async(title, filter, false, on_picked);
+}
+
+/// [`pick_files_async`] for pictures and footage: on a phone, the system's
+/// gallery picker. The same file dialog on a desktop.
+pub fn pick_media_async(title: &str, on_picked: impl FnOnce(Vec<PathBuf>) + Send + 'static) {
+    pick_async(title, None, true, on_picked);
+}
+
+fn pick_async(
+    title: &str,
+    filter: Option<(&str, &[&str])>,
+    gallery: bool,
+    on_picked: impl FnOnce(Vec<PathBuf>) + Send + 'static,
+) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
+        let _ = gallery;
         if let Some(paths) = pick_files(title, filter) {
             on_picked(paths);
         }
@@ -300,7 +340,7 @@ pub fn pick_files_async(
     {
         let _ = (title, filter);
         match FILE_PICKER.get() {
-            Some(picker) => picker(Box::new(on_picked)),
+            Some(picker) => picker(gallery, Box::new(on_picked)),
             None => log::warn!("no file picker on this platform yet"),
         }
     }

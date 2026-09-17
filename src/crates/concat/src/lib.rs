@@ -41,7 +41,7 @@ mod platform;
 /// What a phone's own crate installs before the window runs: the way to
 /// the system's file picker. See `platform::pick_files_async`.
 #[cfg(any(target_os = "android", target_os = "ios"))]
-pub use platform::{FilePicker, install_file_picker};
+pub use platform::{FilePicker, Haptic, install_file_picker, install_haptic};
 mod prefs;
 mod presets;
 mod studio;
@@ -904,7 +904,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
         // The rest are the phone layout's buttons, which have no menu of
         // their own and reach the same rows.
         "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
-        | "undo" | "redo" | "add-selected" | "close-project" | "save" => {
+        | "undo" | "redo" | "add-selected" | "close-project" | "save" | "import-place"
+        | "new-from-gallery" => {
             Shell::with(|_, app| app.invoke_app_menu_selected(action.clone()));
         }
         _ => Shell::with(|shell, app| {
@@ -1189,6 +1190,23 @@ pub fn run() -> Result<(), slint::PlatformError> {
                                 on_ui(move |studio, _, _| studio.import(paths))
                             });
                         }
+                        // The phone's: whatever is picked goes straight on
+                        // the timeline, after what is there.
+                        "import-place" => {
+                            platform::pick_files_async(&i18n::t("Import media"), None, |paths| {
+                                on_ui(move |studio, _, _| studio.import_placed(paths, true))
+                            });
+                        }
+                        // The phone's home screen: a fresh project, then the
+                        // gallery, then the picks on its timeline.
+                        "new-from-gallery" => {
+                            state.quick_project();
+                            if !state.on_start {
+                                platform::pick_media_async(&i18n::t("Import media"), |paths| {
+                                    on_ui(move |studio, _, _| studio.import_placed(paths, true))
+                                });
+                            }
+                        }
                         "export" => {
                             state.export.open = true;
                             state.export.phase = ExportPhase::Idle;
@@ -1374,9 +1392,6 @@ pub fn run() -> Result<(), slint::PlatformError> {
             }
         }
     });
-
-    #[cfg(target_os = "android")]
-    shell.studio.borrow_mut().open_last();
 
     {
         shell.studio.borrow_mut().refresh_art();

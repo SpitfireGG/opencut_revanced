@@ -57,6 +57,10 @@ export global Editor {
     in-out property <bool> back-consumable;
     in-out property <int> back-token;
 
+    /// Phone: which end of the selected clip had its handle tapped, for
+    /// the "run it out to the media's end" chip; -1 for none.
+    in-out property <int> edge-chip: -1;
+
     // ── highlights ──
     /// The last search's finds, best first.
     in-out property <[HighlightData]> highlights;

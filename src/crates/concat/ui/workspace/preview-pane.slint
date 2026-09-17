@@ -692,7 +692,10 @@ component StageOverlay inherits Rectangle {
         y: 0;
         width: root.width;
         height: root.height;
-        if entry.selected: StageItem {
+        // On a phone, the picture that fills the frame wears no box: its
+        // edges are the frame's, and a box there is only a green border
+        // round the whole monitor. Overlays keep theirs.
+        if entry.selected && !(Theme.touch && entry.w >= 0.98 && entry.h >= 0.98): StageItem {
             x: 0;
             y: 0;
             width: parent.width;

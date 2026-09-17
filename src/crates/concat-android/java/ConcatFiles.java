@@ -11,6 +11,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.util.Log;
 
@@ -48,8 +52,30 @@ public class ConcatFiles extends Fragment {
     /** Registered from Rust: the picked files' paths, or none. */
     public static native void filesPicked(String[] paths);
 
-    /** Shows the picker. From any thread; the fragment is added on the UI thread. */
-    public static void pick(final Activity activity) {
+    /** A short tick from the vibration motor. From any thread. */
+    public static void tick(Activity activity) {
+        Vibrator vibrator = (Vibrator) activity.getSystemService(Context.VIBRATOR_SERVICE);
+        if (vibrator == null || !vibrator.hasVibrator()) {
+            return;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK));
+            } else {
+                vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE));
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Could not vibrate: " + e);
+        }
+    }
+
+    /**
+     * Shows the picker. From any thread; the fragment is added on the UI
+     * thread. With `gallery`, the system's photo and video picker where
+     * there is one (Android 13 on); otherwise the document picker, which
+     * also offers sound.
+     */
+    public static void pick(final Activity activity, final boolean gallery) {
         activity.runOnUiThread(new Runnable() {
             @Override
             public void run() {
@@ -60,11 +86,20 @@ public class ConcatFiles extends Fragment {
                         .commitAllowingStateLoss();
                 activity.getFragmentManager().executePendingTransactions();
 
-                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("*/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"video/*", "audio/*", "image/*"});
-                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                Intent intent;
+                if (gallery && Build.VERSION.SDK_INT >= 33) {
+                    intent = new Intent(MediaStore.ACTION_PICK_IMAGES);
+                    intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX,
+                            MediaStore.getPickImagesMaxLimit());
+                } else {
+                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("*/*");
+                    intent.putExtra(Intent.EXTRA_MIME_TYPES,
+                            gallery ? new String[] {"video/*", "image/*"}
+                                    : new String[] {"video/*", "audio/*", "image/*"});
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
                 try {
                     fragment.startActivityForResult(intent, REQUEST_PICK);
                 } catch (Exception e) {

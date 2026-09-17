@@ -173,6 +173,13 @@ impl Fonts {
     pub fn new() -> Fonts {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
+        // fontdb scans nothing on Android; the system's faces are here, and
+        // its sans-serif is Roboto rather than fontdb's default Arial.
+        #[cfg(target_os = "android")]
+        {
+            db.load_fonts_dir("/system/fonts");
+            db.set_sans_serif_family("Roboto");
+        }
         Fonts { db }
     }
 

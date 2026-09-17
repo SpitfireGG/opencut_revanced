@@ -67,6 +67,8 @@ export component TimelinePane inherits Rectangle {
     in-out property <length> track-scroll;
 
     callback scrubbed(seconds: float);
+    /// Phone: a handle of a selected clip tapped; 0 head, 1 tail.
+    callback clip-edge-tapped(id: string, edge: int);
     /// A press on an empty stretch of lane; see Editor.blur.
     callback floor-pressed();
     callback clip-pressed(id: string, additive: bool, edge: int);
@@ -130,7 +132,7 @@ export component TimelinePane inherits Rectangle {
     /// pane that grows again finds its column where it left it.
     property <length> headers-w: root.phone ? 0px : Math.max(0px,
         Math.min(root.header-width, root.width / 2));
-    in property <length> ruler-height: 28px;
+    in property <length> ruler-height: root.phone ? 22px : 28px;
 
     /// Clamped here rather than only where it is written, so a pane dragged
     /// taller than its own track stack cannot stay parked past the end. The
@@ -260,6 +262,7 @@ export component TimelinePane inherits Rectangle {
                 ruler-height: root.ruler-height;
 
                 scrubbed(seconds) => { root.scrubbed(seconds); }
+                clip-edge-tapped(id, edge) => { root.clip-edge-tapped(id, edge); }
                 floor-pressed => { root.floor-pressed(); }
                 clip-pressed(id, additive, edge) => { root.clip-pressed(id, additive, edge); }
                 clip-dragged(seconds, pixels) => { root.clip-dragged(seconds, pixels); }

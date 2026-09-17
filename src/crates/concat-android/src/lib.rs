@@ -128,7 +128,13 @@ mod picker {
     /// Hands the window's crate a picker that runs on this activity.
     pub fn install(app: &AndroidApp) {
         let app = app.clone();
-        concat::install_file_picker(Box::new(move |on_picked| {
+        let haptic_app = app.clone();
+        concat::install_haptic(Box::new(move || {
+            if let Err(error) = tick(&haptic_app) {
+                log::warn!("could not vibrate: {error}");
+            }
+        }));
+        concat::install_file_picker(Box::new(move |gallery, on_picked| {
             let previous = PENDING
                 .lock()
                 .map(|mut slot| slot.replace(on_picked))
@@ -139,7 +145,7 @@ mod picker {
                 // it got nothing rather than left waiting for ever.
                 previous(Vec::new());
             }
-            if let Err(error) = pick(&app) {
+            if let Err(error) = pick(&app, gallery) {
                 log::error!("could not show the document picker: {error}");
                 if let Some(pending) = PENDING.lock().ok().and_then(|mut slot| slot.take()) {
                     pending(Vec::new());
@@ -148,7 +154,38 @@ mod picker {
         }));
     }
 
-    fn pick(app: &AndroidApp) -> jni::errors::Result<()> {
+    /// The fragment class, loaded on first use.
+    fn class(
+        env: &mut Env,
+        activity: &JObject,
+    ) -> jni::errors::Result<&'static Global<JClass<'static>>> {
+        if let Some(class) = CLASS.get() {
+            return Ok(class);
+        }
+        let loaded = load_class(env, activity)?;
+        let _ = CLASS.set(loaded);
+        Ok(CLASS.get().expect("set just above"))
+    }
+
+    /// `ConcatFiles.tick`: a short buzz.
+    fn tick(app: &AndroidApp) -> jni::errors::Result<()> {
+        // SAFETY: as in `pick`.
+        let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
+        vm.attach_current_thread(|env| {
+            // SAFETY: as in `pick`.
+            let activity = unsafe { JObject::from_raw(env, app.activity_as_ptr().cast()) };
+            let class = class(env, &activity)?;
+            env.call_static_method(
+                class,
+                jni_str!("tick"),
+                jni_sig!("(Landroid/app/Activity;)V"),
+                &[(&activity).into()],
+            )?;
+            Ok(())
+        })
+    }
+
+    fn pick(app: &AndroidApp, gallery: bool) -> jni::errors::Result<()> {
         // SAFETY: the pointer is the activity's JavaVM, live for the
         // process; `from_raw` also seeds `JavaVM::singleton`, which the
         // native callback below reaches for.
@@ -157,19 +194,12 @@ mod picker {
             // SAFETY: the activity pointer is a live reference the app
             // holds for as long as it runs; it is only read here.
             let activity = unsafe { JObject::from_raw(env, app.activity_as_ptr().cast()) };
-            let class = match CLASS.get() {
-                Some(class) => class,
-                None => {
-                    let loaded = load_class(env, &activity)?;
-                    let _ = CLASS.set(loaded);
-                    CLASS.get().expect("set just above")
-                }
-            };
+            let class = class(env, &activity)?;
             env.call_static_method(
                 class,
                 jni_str!("pick"),
-                jni_sig!("(Landroid/app/Activity;)V"),
-                &[(&activity).into()],
+                jni_sig!("(Landroid/app/Activity;Z)V"),
+                &[(&activity).into(), gallery.into()],
             )?;
             Ok(())
         })

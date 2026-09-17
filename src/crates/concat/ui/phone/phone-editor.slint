@@ -167,6 +167,7 @@ export component PhoneEditor inherits Rectangle {
     // A clip sheet is about the selection; when the selection goes, so does
     // the sheet, rather than showing the project's details in its place.
     changed has-clip => {
+        Editor.edge-chip = -1;
         if (root.sheet == "clip" || root.sheet == "highlights"
             || (root.sheet == "library" && root.library-page >= 3)) {
             root.close();
@@ -213,7 +214,7 @@ export component PhoneEditor inherits Rectangle {
         else if (tool.id == "filters") { root.library-page = 4; root.open("library", tool.id, tool.label); }
         else if (tool.id == "templates") { root.library-page = 5; root.open("library", tool.id, tool.label); }
         // straight to an action
-        else if (tool.id == "import") { Editor.shortcut("import"); }
+        else if (tool.id == "import") { Editor.shortcut("import-place"); }
         else if (tool.id == "captions") { Editor.captions(); }
         else if (tool.id == "speak") { Editor.speak(); }
         else if (tool.id == "track") { Editor.add-track(); }
@@ -355,8 +356,9 @@ export component PhoneEditor inherits Rectangle {
     property <length> transport-h: 48px;
     property <length> tools-h: 76px;
     property <length> strip-h: root.is-title ? 52px : 0px;
-    /// A third of the screen, and never so little the lanes are unusable.
-    property <length> timeline-h: Math.max(150px, root.height * 0.34);
+    /// Under a third of the screen, so the picture gets the room; never so
+    /// little the lanes are unusable.
+    property <length> timeline-h: Math.max(140px, root.height * 0.29);
     property <length> lower-h: root.full ? 0px
         : root.timeline-h + root.strip-h + root.tools-h;
     property <length> monitor-h: Math.max(80px,
@@ -613,7 +615,7 @@ export component PhoneEditor inherits Rectangle {
 
             BarButton {
                 glyph: Glyph.music;
-                clicked => { Editor.shortcut("import"); }
+                clicked => { Editor.shortcut("import-place"); }
             }
             BarButton {
                 glyph: Glyph.text-mark;
@@ -624,14 +626,11 @@ export component PhoneEditor inherits Rectangle {
             }
             BarButton {
                 glyph: Glyph.image;
-                clicked => { Editor.shortcut("import"); }
+                clicked => { Editor.shortcut("import-place"); }
             }
             BarButton {
                 glyph: Glyph.film;
-                clicked => {
-                    root.library-page = 0;
-                    root.open("library", "media", I18n.t("Media"));
-                }
+                clicked => { Editor.shortcut("import-place"); }
             }
         }
 
@@ -741,6 +740,127 @@ export component PhoneEditor inherits Rectangle {
                     label: tool.label;
                     current: root.sheet-tool == tool.id;
                     clicked => { root.run(tool); }
+                }
+            }
+        }
+    }
+
+    // ── the clip's quick actions ─────────────────────────────────────────
+    //
+    // Over the top of the lanes while a clip is selected, the way VN floats
+    // them over its timeline: the verbs a thumb wants most, one tap each.
+    property <[PhoneTool]> quick-tools: [
+        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
+        { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
+        { id: "lock", glyph: Glyph.lock, label: I18n.t("Lock") },
+        { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
+    ];
+
+    if root.has-clip && root.sheet == "" && !root.full: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.lower-y + 26px;
+        width: quick.preferred-width;
+        height: 56px;
+        border-radius: 14px;
+        background: Theme.accent;
+        drop-shadow-blur: 12px;
+        drop-shadow-offset-y: 3px;
+        drop-shadow-color: #00000066;
+
+        quick := HorizontalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+
+            for tool in root.quick-tools: Rectangle {
+                width: 62px;
+                border-radius: 10px;
+                background: press.pressed ? Theme.on-accent.with-alpha(0.12) : Colors.transparent;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon {
+                            glyph: tool.glyph;
+                            size: 20px;
+                            weight: 1.9;
+                            tint: Theme.on-accent;
+                        }
+                    }
+                    Text {
+                        text: tool.label;
+                        color: Theme.on-accent;
+                        font-size: Theme.fs-xs;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+                }
+
+                press := TouchArea {
+                    clicked => {
+                        if (tool.id == "lock") {
+                            Editor.menu-selected("lock");
+                        } else {
+                            root.run(tool);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // A tapped handle's offer: run that end of the clip out to its media's.
+    if root.has-clip && Editor.edge-chip >= 0 && root.sheet == "" && !root.full: Rectangle {
+        x: (root.width - self.width) / 2;
+        y: root.lower-y + 26px + 56px + 8px;
+        width: chip.preferred-width;
+        height: 40px;
+        border-radius: 20px;
+        background: Theme.raised;
+        border-width: 1px;
+        border-color: Theme.accent;
+
+        chip := HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 4px;
+            spacing: 8px;
+
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    glyph: Editor.edge-chip == 0 ? Glyph.skip-back : Glyph.skip-forward;
+                    size: 16px;
+                    tint: Theme.accent;
+                }
+            }
+
+            Text {
+                text: Editor.edge-chip == 0
+                    ? I18n.t("Extend to clip beginning")
+                    : I18n.t("Extend to clip ending");
+                color: Theme.fg;
+                font-size: Theme.fs-lg;
+                vertical-alignment: center;
+
+                TouchArea {
+                    clicked => {
+                        Editor.menu-selected(Editor.edge-chip == 0 ? "extend-start" : "extend-end");
+                        Editor.edge-chip = -1;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    width: 32px;
+                    height: 32px;
+                    glyph: Glyph.close;
+                    icon-size: 14px;
+                    clicked => { Editor.edge-chip = -1; }
                 }
             }
         }

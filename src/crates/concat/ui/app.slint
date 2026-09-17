@@ -34,6 +34,7 @@ import { PaneKind } from "workspace/pane-switcher.slint";
 import { RecentProjectData, StartData, StartScreen } from "start.slint";
 import { TitleBar } from "title-bar.slint";
 import { PhoneEditor } from "phone/phone-editor.slint";
+import { PhoneHome } from "phone/phone-home.slint";
 import {
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData,
 } from "inspector/clip-inspector.slint";
@@ -408,9 +409,8 @@ export component App inherits Window {
             padding-left: root.safe-area-insets.left;
             padding-right: root.safe-area-insets.right;
 
-            // The phone layout carries its own project bar; the strip stays
-            // for the launch screen, which has nothing else at the top.
-            if !Editor.compact || root.on-start: TitleBar {
+            // The phone's screens carry their own bars.
+            if !Editor.compact: TitleBar {
                 macos: root.macos;
                 minimal: root.on-start;
                 project-name: root.project-name;
@@ -436,7 +436,18 @@ export component App inherits Window {
                 export-clicked => { root.export-clicked(); }
             }
 
-            if root.on-start: StartScreen {
+            if root.on-start && Editor.compact: PhoneHome {
+                vertical-stretch: 1;
+
+                data: root.start;
+                recents: root.recents;
+
+                open-recent(path) => { root.start-open-recent(path); }
+                forget-recent(path) => { root.start-forget-recent(path); }
+                dismiss-error => { root.start-dismiss-error(); }
+            }
+
+            if root.on-start && !Editor.compact: StartScreen {
                 vertical-stretch: 1;
 
                 data: root.start;

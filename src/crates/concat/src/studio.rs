@@ -821,6 +821,9 @@ pub struct Studio {
     /// The last highlight search, and the media it searched.
     pub highlights: Vec<Highlight>,
     pub highlight_media: Option<String>,
+    /// Whether the picture being dragged sits on the frame's vertical and
+    /// horizontal centre lines, so the haptic ticks on arrival only.
+    pub centred: (bool, bool),
     /// Where the inspector should go, and a count that changes every time
     /// something is applied from the library; see `Editor.inspector-jump-token`.
     pub inspector_jump: (i32, &'static str, &'static str),
@@ -1493,6 +1496,7 @@ impl Studio {
             stage_guides: Vec::new(),
             highlights: Vec::new(),
             highlight_media: None,
+            centred: (false, false),
             inspector_jump: (0, "", ""),
             audition: None,
             revision: 0,
@@ -2272,6 +2276,13 @@ impl Studio {
 
     /// Probes the files on a worker and adds what probed as media.
     pub fn import(&mut self, paths: Vec<std::path::PathBuf>) {
+        self.import_placed(paths, false);
+    }
+
+    /// [`Studio::import`], and with `place` each new item also goes on the
+    /// timeline, one after another from its end - the phone's way in, where
+    /// there is no bin to drag from.
+    pub fn import_placed(&mut self, paths: Vec<std::path::PathBuf>, place: bool) {
         if paths.is_empty() || self.session.is_none() {
             return;
         }
@@ -2282,7 +2293,13 @@ impl Studio {
                     .map(|path| media::probe(&path.to_string_lossy()))
                     .collect::<Vec<_>>()
             },
-            |studio, _, _, results| {
+            move |studio, _, _, results| {
+                let known: HashSet<String> = studio
+                    .project()
+                    .media
+                    .iter()
+                    .map(|item| item.id.clone())
+                    .collect();
                 let mut commands = Vec::new();
                 let mut failures = Vec::new();
                 for result in results {
@@ -2296,6 +2313,19 @@ impl Studio {
                 let added = commands.len();
                 if !commands.is_empty() {
                     studio.apply(Command::Batch { commands });
+                }
+                if place {
+                    let fresh: Vec<String> = studio
+                        .project()
+                        .media
+                        .iter()
+                        .filter(|item| !known.contains(&item.id))
+                        .map(|item| item.id.clone())
+                        .collect();
+                    for media_id in fresh {
+                        let start = f64::from(studio.duration());
+                        studio.apply(Command::AddClipAtFirstFree { media_id, start });
+                    }
                 }
                 if let Some(error) = failures.first() {
                     studio.notify(&crate::host::probe_error(error), true);
@@ -4167,9 +4197,11 @@ impl Studio {
                             xs.extend([footprint.cx - ow, footprint.cx, footprint.cx + ow]);
                             ys.extend([footprint.cy - oh, footprint.cy, footprint.cy + oh]);
                         }
+                        let mut centred = (false, false);
                         if let Some((shift, at)) =
                             Self::stage_snap([cx - hw, cx, cx + hw], &xs, pull / f64::from(width))
                         {
+                            centred.0 = at == 0.5;
                             dx += shift;
                             self.stage_guides.push(StageGuideData {
                                 vertical: true,
@@ -4185,6 +4217,16 @@ impl Studio {
                                 at: at as f32,
                             });
                         }
+                        centred.1 = self
+                            .stage_guides
+                            .iter()
+                            .any(|guide| !guide.vertical && guide.at == 0.5);
+                        // A tick each time the picture arrives on a centre
+                        // line, and not again while it stays there.
+                        if (centred.0 && !self.centred.0) || (centred.1 && !self.centred.1) {
+                            crate::platform::haptic_tick();
+                        }
+                        self.centred = centred;
                     }
                 }
                 for origin in origins {
@@ -4344,6 +4386,7 @@ impl Studio {
     /// transform command per picture, batched when there are several.
     pub fn stage_released(&mut self) {
         self.stage_guides.clear();
+        self.centred = (false, false);
         let overlay = matches!(self.gesture, Gesture::Paint { .. })
             .then(|| self.stroke_overlay())
             .filter(|(path, _, _)| !path.is_empty());
@@ -5179,26 +5222,20 @@ impl Studio {
         }
     }
 
-    /// A phone skips the launch screen: it reopens the project used last,
-    /// or makes one with the defaults when there is none.
-    pub fn open_last(&mut self) {
-        if let Some(last) = self.recents.iter().max_by_key(|info| info.opened_at) {
-            let path = last.path.clone();
-            self.open_recent(&path);
-        }
-        if self.on_start {
-            let base = self.start.name.clone();
-            for n in 1..100 {
-                self.start.error.clear();
-                self.start.name = if n == 1 {
-                    base.clone()
-                } else {
-                    format!("{base} {n}")
-                };
-                self.create_project();
-                if !self.on_start || !self.start.error.contains("already exists") {
-                    break;
-                }
+    /// The phone's new project: named for today, with the launch form's
+    /// defaults - 9:16 4K at 30 fps - and no form to fill in.
+    pub fn quick_project(&mut self) {
+        let base = crate::format::today_name();
+        for n in 1..100 {
+            self.start.error.clear();
+            self.start.name = if n == 1 {
+                base.clone()
+            } else {
+                format!("{base} {n}")
+            };
+            self.create_project();
+            if !self.on_start || !self.start.error.contains("already exists") {
+                break;
             }
         }
     }
@@ -7854,6 +7891,7 @@ impl Studio {
             }
             "lock" => self.toggle_lock(&clip.track_id),
             "fit-width" => self.fit_width(&clip),
+            "extend-start" | "extend-end" => self.extend(&clip, action == "extend-start"),
             "enhance" => self.enhance_voice(&clip),
             "duck" => self.duck_under_speech(&clip),
             // A clip that is part of the selection takes the selection with
@@ -7890,6 +7928,33 @@ impl Studio {
             rotation: None,
             stretch_x: None,
             stretch_y: None,
+        });
+    }
+
+    /// Pulls one end of a clip out as far as its media goes: the head back
+    /// to the file's first frame, the tail on to its last. A still has no
+    /// end to reach and is left alone.
+    fn extend(&mut self, clip: &Clip, head: bool) {
+        let rate = clip.speed.max(0.01);
+        let delta = if head {
+            -clip.source_start / rate
+        } else {
+            let Some(length) = self
+                .project()
+                .media_by_id(&clip.media_id)
+                .and_then(|media| media.duration)
+            else {
+                return;
+            };
+            (length - clip.source_start) / rate - clip.duration
+        };
+        if delta.abs() < 1e-3 {
+            return;
+        }
+        self.apply(Command::TrimClip {
+            clip_id: clip.id.clone(),
+            edge: if head { TrimEdge::Start } else { TrimEdge::End },
+            delta,
         });
     }
 

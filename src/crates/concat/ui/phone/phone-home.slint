@@ -1,0 +1,389 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+
+import { I18n } from "../i18n.slint";
+import { Theme } from "../theme/theme.slint";
+import { Glyph, Icon } from "../icons.slint";
+import { Editor } from "../editor.slint";
+import { RecentProjectData, StartData } from "../start.slint";
+
+// The phone's first screen: your projects, and the button that starts the
+// next one.
+//
+// The project you were last in is the big card at the top - on a phone the
+// likeliest thing to do on opening the app is to carry on. Everything older
+// is a plain list under it. The round button makes a new 9:16 project and
+// opens the gallery straight away; what is picked lands on its timeline.
+
+component Poster inherits Rectangle {
+    in property <image> source;
+
+    border-radius: Theme.r;
+    background: Theme.well;
+    clip: true;
+
+    if root.source.width > 0: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.source;
+        image-fit: cover;
+    }
+
+    if root.source.width == 0: Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        glyph: Glyph.film;
+        size: 22px;
+        weight: 1.5;
+        tint: Theme.fg-dim;
+    }
+}
+
+/// An older project: poster, name, when, and a way to take it off the list.
+component ProjectRow inherits Rectangle {
+    in property <RecentProjectData> project;
+
+    callback opened();
+    callback forgotten();
+
+    property <bool> asking;
+
+    height: 100px;
+    border-radius: Theme.r-lg;
+    background: touch.pressed ? Theme.field : Colors.transparent;
+
+    touch := TouchArea {
+        clicked => {
+            if (root.asking) {
+                root.asking = false;
+            } else {
+                root.opened();
+            }
+        }
+    }
+
+    Poster {
+        x: 4px;
+        y: (parent.height - self.height) / 2;
+        width: 50px;
+        height: 88px;
+        source: root.project.poster;
+    }
+
+    VerticalLayout {
+        x: 70px;
+        y: 0;
+        width: parent.width - 70px - 52px;
+        height: parent.height;
+        alignment: center;
+        spacing: 4px;
+
+        Text {
+            text: root.project.name;
+            color: Theme.fg;
+            font-size: Theme.fs-input;
+            font-weight: Theme.weight-title;
+            overflow: elide;
+        }
+        Text {
+            text: root.project.when;
+            color: Theme.fg-muted;
+            font-size: Theme.fs;
+            overflow: elide;
+        }
+        Text {
+            text: root.project.detail;
+            color: Theme.fg-dim;
+            font-size: Theme.fs-sm;
+            overflow: elide;
+        }
+    }
+
+    // Two taps to lose a project from the list: the dots, then the word.
+    // The folder itself stays where it is.
+    if !root.asking: Rectangle {
+        x: parent.width - self.width;
+        y: (parent.height - self.height) / 2;
+        width: 44px;
+        height: 44px;
+        border-radius: 22px;
+        background: more.pressed ? Theme.field : Colors.transparent;
+
+        Text {
+            width: 100%;
+            height: 100%;
+            text: "•••";
+            color: Theme.fg-dim;
+            font-size: Theme.fs-sm;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        more := TouchArea {
+            clicked => { root.asking = true; }
+        }
+    }
+
+    if root.asking: Rectangle {
+        x: parent.width - self.width - 4px;
+        y: (parent.height - self.height) / 2;
+        width: remove.preferred-width + 28px;
+        height: 36px;
+        border-radius: 18px;
+        background: Theme.danger-soft;
+
+        remove := Text {
+            x: 14px;
+            y: 0;
+            height: parent.height;
+            text: I18n.t("Remove from list");
+            color: Theme.danger;
+            font-size: Theme.fs;
+            vertical-alignment: center;
+        }
+
+        TouchArea {
+            clicked => {
+                root.asking = false;
+                root.forgotten();
+            }
+        }
+    }
+}
+
+export component PhoneHome inherits Rectangle {
+    in property <StartData> data;
+    in property <[RecentProjectData]> recents;
+
+    callback open-recent(path: string);
+    callback forget-recent(path: string);
+    callback dismiss-error();
+
+    background: Theme.page;
+
+    property <length> pad: 20px;
+    property <bool> any: root.recents.length > 0;
+
+    Flickable {
+        viewport-height: page.preferred-height + 120px;
+
+        page := VerticalLayout {
+            width: parent.width;
+            padding-left: root.pad;
+            padding-right: root.pad;
+            padding-top: 12px;
+            spacing: 0px;
+
+            // ── the heading ──
+            HorizontalLayout {
+                height: 56px;
+
+                Text {
+                    horizontal-stretch: 1;
+                    text: I18n.t("Your projects");
+                    color: Theme.fg;
+                    font-size: 30px;
+                    font-weight: Theme.weight-display;
+                    letter-spacing: -0.5px;
+                    vertical-alignment: center;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 44px;
+                        height: 44px;
+                        border-radius: 22px;
+                        background: gear.pressed ? Theme.field : Colors.transparent;
+
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            glyph: Glyph.settings;
+                            size: 22px;
+                            tint: Theme.fg;
+                        }
+                        gear := TouchArea {
+                            clicked => { Editor.shortcut("settings"); }
+                        }
+                    }
+                }
+            }
+
+            if root.data.error != "": Rectangle {
+                height: 52px;
+
+                Rectangle {
+                    y: 8px;
+                    height: 44px;
+                    border-radius: Theme.r;
+                    background: Theme.danger-soft;
+
+                    Text {
+                        x: 12px;
+                        width: parent.width - 56px;
+                        height: parent.height;
+                        text: root.data.error;
+                        color: Theme.danger;
+                        font-size: Theme.fs;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    TouchArea {
+                        clicked => { root.dismiss-error(); }
+                    }
+                }
+            }
+
+            // ── carry on ──
+            //
+            // The last project, large. The one thing on the page meant to be
+            // tapped without reading.
+            if root.any: Rectangle {
+                height: 244px;
+
+                hero := Rectangle {
+                    y: 16px;
+                    height: 220px;
+                    border-radius: Theme.r-xl;
+                    background: hero-touch.pressed ? Theme.field : Theme.panel;
+                    clip: true;
+
+                    hero-touch := TouchArea {
+                        clicked => { root.open-recent(root.recents[0].path); }
+                    }
+
+                    Poster {
+                        x: 12px;
+                        y: 12px;
+                        width: 110px;
+                        height: parent.height - 24px;
+                        border-radius: Theme.r-lg;
+                        source: root.recents[0].poster;
+                    }
+
+                    VerticalLayout {
+                        x: 140px;
+                        y: 18px;
+                        width: parent.width - 140px - 16px;
+                        height: parent.height - 36px;
+                        spacing: 6px;
+
+                        Text {
+                            text: I18n.t("Pick up where you left off");
+                            color: Theme.accent;
+                            font-size: Theme.fs;
+                        }
+                        Text {
+                            text: root.recents[0].name;
+                            color: Theme.fg;
+                            font-size: 22px;
+                            font-weight: Theme.weight-title;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: root.recents[0].when;
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-lg;
+                        }
+                        Text {
+                            text: root.recents[0].detail;
+                            color: Theme.fg-dim;
+                            font-size: Theme.fs-sm;
+                            overflow: elide;
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
+
+                        HorizontalLayout {
+                            alignment: start;
+                            Rectangle {
+                                width: open-label.preferred-width + 36px;
+                                height: 40px;
+                                border-radius: 20px;
+                                background: Theme.accent;
+
+                                open-label := Text {
+                                    x: 18px;
+                                    height: parent.height;
+                                    text: I18n.t("Open");
+                                    color: Theme.on-accent;
+                                    font-size: Theme.fs-input;
+                                    font-weight: Theme.weight-title;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── the rest ──
+            if root.recents.length > 1: Text {
+                height: 48px;
+                text: I18n.t("Earlier");
+                color: Theme.fg-muted;
+                font-size: Theme.fs-lg;
+                font-weight: Theme.weight-title;
+                vertical-alignment: bottom;
+            }
+
+            for project[index] in root.recents: VerticalLayout {
+                if index > 0: ProjectRow {
+                    project: project;
+                    opened => { root.open-recent(project.path); }
+                    forgotten => { root.forget-recent(project.path); }
+                }
+            }
+
+            // ── nothing yet ──
+            if !root.any: VerticalLayout {
+                padding-top: 120px;
+                spacing: 10px;
+
+                Text {
+                    text: I18n.t("No projects yet");
+                    color: Theme.fg;
+                    font-size: 22px;
+                    font-weight: Theme.weight-title;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: I18n.t("Tap + to pick videos from your gallery. They go straight onto a new 9:16 timeline.");
+                    color: Theme.fg-muted;
+                    font-size: Theme.fs-lg;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+
+    // ── the next one ──
+    Rectangle {
+        x: parent.width - self.width - 20px;
+        y: parent.height - self.height - 28px;
+        width: 64px;
+        height: 64px;
+        border-radius: 32px;
+        background: add.pressed ? Theme.accent-hover : Theme.accent;
+        drop-shadow-blur: 16px;
+        drop-shadow-offset-y: 4px;
+        drop-shadow-color: #00000080;
+        opacity: root.data.busy ? 0.5 : 1;
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            glyph: Glyph.plus;
+            size: 28px;
+            weight: 2.4;
+            tint: Theme.on-accent;
+        }
+
+        add := TouchArea {
+            enabled: !root.data.busy;
+            clicked => { Editor.shortcut("new-from-gallery"); }
+        }
+    }
+}

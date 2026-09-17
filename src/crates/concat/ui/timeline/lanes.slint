@@ -143,6 +143,9 @@ component Clip inherits Rectangle {
     /// `dy` run from the press.
     callback pan-started();
     callback panned(dx: length, dy: length);
+    /// Phone: a handle of the selected clip tapped, not dragged. 0 head,
+    /// 1 tail.
+    callback edge-tapped(edge: int);
 
     property <color> mark: Paint.mark(root.item.kind);
     property <color> well: Paint.well(root.item.kind);
@@ -415,8 +418,57 @@ component Clip inherits Rectangle {
         width: parent.width;
         height: parent.height;
         border-radius: Theme.r-sm;
-        border-width: root.item.selected ? 2px : 1px;
+        border-width: root.item.selected ? (root.phone ? 0px : 2px) : 1px;
         border-color: root.item.selected ? Theme.accent : root.mark;
+    }
+
+    // ── the phone's handles ──────────────────────────────────────────────
+    //
+    // A selected clip on a phone is held between two tabs, one per end,
+    // with a rule along the top and bottom joining them: the tabs are what
+    // a thumb trims with, and a tap on one offers to run that end out to
+    // the media's own.
+    if root.phone && root.item.selected: Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 2px;
+            background: Theme.accent;
+        }
+        Rectangle {
+            x: 0;
+            y: parent.height - 2px;
+            width: parent.width;
+            height: 2px;
+            background: Theme.accent;
+        }
+
+        for side in 2: Rectangle {
+            x: side == 0 ? 0px : parent.width - self.width;
+            y: 0;
+            width: Math.min(root.edge-grab, parent.width / 2);
+            height: parent.height;
+            border-top-left-radius: side == 0 ? Theme.r-sm : 0px;
+            border-bottom-left-radius: side == 0 ? Theme.r-sm : 0px;
+            border-top-right-radius: side == 1 ? Theme.r-sm : 0px;
+            border-bottom-right-radius: side == 1 ? Theme.r-sm : 0px;
+            background: Theme.accent;
+
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                glyph: side == 0 ? Glyph.chevron-left : Glyph.chevron-right;
+                size: 14px;
+                weight: 2.6;
+                tint: Theme.on-accent;
+            }
+        }
     }
 
     // ── locked ───────────────────────────────────────────────────────────
@@ -463,6 +515,9 @@ component Clip inherits Rectangle {
                 } else if (event.kind == PointerEventKind.up) {
                     if (self.moving) {
                         root.released();
+                        if (!self.travelled && root.edge-at >= 0) {
+                            root.edge-tapped(root.edge-at);
+                        }
                     } else if (!self.travelled) {
                         // A tap: select it, as a press and release with
                         // nothing moved in between.
@@ -557,6 +612,8 @@ export component Lanes inherits Rectangle {
     in property <bool> phone;
 
     callback scrubbed(seconds: float);
+    /// Phone: a handle of a selected clip tapped; see Clip.edge-tapped.
+    callback clip-edge-tapped(id: string, edge: int);
     /// A press on an empty stretch of lane, before the band it may become.
     callback floor-pressed();
     callback clip-pressed(id: string, additive: bool, edge: int);
@@ -613,9 +670,16 @@ export component Lanes inherits Rectangle {
     property <length> lanes-h: Math.max(0px, root.height - root.ruler-height);
     /// Seconds at the left edge as drawn. On a phone that follows the
     /// playhead, so playing scrolls the lanes and scrubbing is panning.
+    ///
+    /// The playhead rides at the middle once there is time behind it to
+    /// show; before that it sits where the playhead's time is, so the start
+    /// of the edit is at the lanes' left edge and not half a screen in.
     property <float> left: root.phone
-        ? root.playhead - root.width / 2 / root.px-per-second
+        ? root.playhead - Math.min(root.width / 2,
+            root.lead + root.playhead * root.px-per-second) / root.px-per-second
         : root.scroll-left;
+    /// Room before the first frame on a phone, for the head handle.
+    property <length> lead: 20px;
     /// x of a moment, in the lanes' own coordinates
     pure function at(seconds: float) -> length {
         return (seconds - root.left) * root.px-per-second;
@@ -833,6 +897,7 @@ export component Lanes inherits Rectangle {
                 edge-grab: root.phone ? (entry.selected ? 20px : 0px) : 6px;
                 pan-started => { root.pan-start(); }
                 panned(dx, dy) => { root.pan(dx, dy); }
+                edge-tapped(edge) => { root.clip-edge-tapped(entry.id, edge); }
                 // Read back through the lane the clip sits on rather than carried
                 // on the clip: locking is a property of the lane, and copying it
                 // onto every clip would be one more thing to keep in step.
@@ -1004,7 +1069,11 @@ export component Lanes inherits Rectangle {
                         y: 0;
                         width: parent.width - 7px;
                         height: parent.height - 7px;
-                        text: Fmt.frames-timecode(parent.seconds, root.frame-rate);
+                        // "0s", "2s", "1:04" on a phone, as VN spells them.
+                        text: !root.phone
+                            ? Fmt.frames-timecode(parent.seconds, root.frame-rate)
+                            : parent.seconds < 60 ? "\{Math.round(parent.seconds)}s"
+                            : Fmt.short-duration(parent.seconds);
                         color: Theme.fg-dim;
                         font-size: Theme.fs-xs;
                         vertical-alignment: center;

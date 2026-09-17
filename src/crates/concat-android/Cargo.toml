@@ -57,6 +57,10 @@ target_sdk_version = 35
 [[package.metadata.android.uses_permission]]
 name = "android.permission.INTERNET"
 
+# The tick a dragged picture gives when it lands on the frame's centre.
+[[package.metadata.android.uses_permission]]
+name = "android.permission.VIBRATE"
+
 [package.metadata.android.application]
 label = "Concat"
 icon = "@mipmap/ic_launcher"
