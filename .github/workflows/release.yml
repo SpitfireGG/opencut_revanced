@@ -63,7 +63,7 @@ jobs:
 
   phones:
     needs: [check]
-    uses: ./.github/workflows/mobile.yml
+    uses: ./.github/workflows/android.yml
     secrets: inherit
 
   publish:
