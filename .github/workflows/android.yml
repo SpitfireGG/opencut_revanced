@@ -25,6 +25,12 @@ on:
         required: false
       ANDROID_KEYSTORE_PASSWORD:
         required: false
+  # Every push to main builds too: that is what fills the caches below.
+  # GitHub lets a tag's run restore only caches saved on its own ref or on
+  # the default branch, so caches saved by a release tag are never read
+  # again, and without main building, every release started cold.
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -69,7 +75,7 @@ jobs:
         if: steps.ffmpeg.outputs.cache-hit != 'true'
         run: src/scripts/ffmpeg-mobile.sh aarch64-linux-android
       - name: FFmpeg for Android (save)
-        if: steps.ffmpeg.outputs.cache-hit != 'true'
+        if: steps.ffmpeg.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v4
         with:
           path: src/vendor/ffmpeg/aarch64-linux-android
@@ -82,6 +88,10 @@ jobs:
         with:
           workspaces: src
           key: aarch64-linux-android
+          # Only main's cache can be read by a tag, so only main saves one;
+          # a failed build still leaves every crate that did compile.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-on-failure: true
 
       - name: Signing key
         env:
