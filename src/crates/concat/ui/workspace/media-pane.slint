@@ -1328,7 +1328,12 @@ export component MediaPane inherits Rectangle {
     /// That row was used.
     callback pane-removed();
 
-    property <int> tab;
+    /// The page: Media, Text, Transitions, Effects, Filters, Templates.
+    /// Settable, so the phone's tool row can open the library on the page
+    /// the tool is about.
+    in-out property <int> tab;
+    /// No page strip: the phone's tool row is the strip there.
+    in property <bool> bare;
     property <bool> categories-open: true;
     property <bool> text-open: true;
     /// 0 = Titles, 1 = Presets
@@ -1461,7 +1466,7 @@ export component MediaPane inherits Rectangle {
         // The page strip. Its bottom edge is the pane's full-width divider,
         // which is why the hairline is a child of this row and not a border on
         // the pill below it.
-        Rectangle {
+        if !root.bare: Rectangle {
             height: 44px;
 
             Rectangle {

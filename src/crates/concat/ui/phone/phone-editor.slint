@@ -1,0 +1,647 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+
+import { I18n } from "../i18n.slint";
+import { Theme } from "../theme/theme.slint";
+import { Fmt } from "../util.slint";
+import { Glyph, Icon } from "../icons.slint";
+import { Editor } from "../editor.slint";
+import { ClipKind } from "../timeline/model.slint";
+import { PaneKind } from "../workspace/pane-switcher.slint";
+import { Seat } from "../workspace/seat.slint";
+
+// The editor on a phone, held upright, laid out the way VN and every other
+// phone editor lay it out:
+//
+//   the project bar         close · name · settings · Export
+//   the monitor             the picture, and nothing round it
+//   the transport           time · undo · redo · play · full screen
+//   the timeline            lanes only, the playhead fixed in the middle
+//   the tool row            what can be added, or what can be done to the
+//                           selected clip
+//
+// A tool that needs controls opens a sheet over the timeline and the tool
+// row, and the monitor stays where it is above it, so what a slider does is
+// seen as it is dragged.
+//
+// Nothing here is a second copy of a view. The monitor, the timeline, the
+// library and the inspector are the desktop's own, in a Seat each, with
+// their chrome taken off; this file is the arrangement and the tool row.
+
+/// One button of the tool row.
+export struct PhoneTool {
+    /// What `run` is asked to do.
+    id: string,
+    glyph: Glyph,
+    label: string,
+}
+
+component ToolButton inherits Rectangle {
+    in property <Glyph> glyph;
+    in property <string> label;
+    in property <bool> current;
+
+    callback clicked();
+
+    width: 68px;
+    border-radius: Theme.r;
+    background: touch.pressed || root.current ? Theme.field : Colors.transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 6px;
+
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                glyph: root.glyph;
+                size: 22px;
+                weight: 1.7;
+                tint: root.current ? Theme.accent : Theme.fg;
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: root.current ? Theme.fg : Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A square icon button with a finger-sized target.
+component BarButton inherits Rectangle {
+    in property <Glyph> glyph;
+    in property <bool> enabled: true;
+    in property <length> icon-size: 20px;
+
+    callback clicked();
+
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    background: touch.pressed ? Theme.field : Colors.transparent;
+    opacity: root.enabled ? 1 : 0.4;
+
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        glyph: root.glyph;
+        size: root.icon-size;
+        weight: 1.8;
+        tint: Theme.fg;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+/// A pill with a word on it: Export, and the sheet's Add.
+component PillButton inherits Rectangle {
+    in property <string> label;
+
+    callback clicked();
+
+    width: label.preferred-width + 28px;
+    height: 34px;
+    border-radius: 17px;
+    background: touch.pressed ? Theme.accent-hover : Theme.accent;
+
+    label := Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        color: Theme.on-accent;
+        font-size: Theme.fs-lg;
+        font-weight: Theme.weight-title;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component PhoneEditor inherits Rectangle {
+    in property <string> project-name;
+
+    background: Theme.page;
+
+    // ── what is open ─────────────────────────────────────────────────────
+    //
+    // The sheet over the timeline: "" for none, "library" for a library
+    // page, "clip" for an inspector section, "project" for the details and
+    // "ratio" for the frame shape. `sheet-tool` is the button that opened
+    // it, which is also what the sheet is called.
+    property <string> sheet;
+    property <string> sheet-tool;
+    property <string> sheet-title;
+    property <int> library-page;
+    property <string> section;
+    /// The monitor alone, the timeline and tools put away.
+    property <bool> full;
+
+    property <bool> has-clip: Editor.selected-clip.present;
+
+    // The back button; see Editor.back-token.
+    property <bool> can-back: root.sheet != "" || root.full || root.has-clip;
+    changed can-back => { Editor.back-consumable = root.can-back; }
+    property <int> back-token: Editor.back-token;
+    changed back-token => { root.back(); }
+    init => { Editor.back-consumable = root.can-back; }
+    property <ClipKind> kind: Editor.selected-clip.kind;
+
+    // A clip sheet is about the selection; when the selection goes, so does
+    // the sheet, rather than showing the project's details in its place.
+    changed has-clip => {
+        if (root.sheet == "clip" || (root.sheet == "library" && root.library-page >= 3)) {
+            root.close();
+        }
+    }
+
+    public function close() {
+        root.sheet = "";
+        root.sheet-tool = "";
+    }
+
+    /// Puts away the top thing: a sheet, then full screen, then the
+    /// selection.
+    function back() {
+        if (root.sheet != "") {
+            root.close();
+        } else if (root.full) {
+            root.full = false;
+        } else if (root.has-clip) {
+            Editor.band-selected(-1, -1, -1px, -1px, false);
+        }
+    }
+
+    function open(kind: string, tool: PhoneTool) {
+        if (root.sheet-tool == tool.id) {
+            root.close();
+            return;
+        }
+        root.sheet = kind;
+        root.sheet-tool = tool.id;
+        root.sheet-title = tool.label;
+    }
+
+    function run(tool: PhoneTool) {
+        if (tool.id == "back") {
+            root.close();
+            Editor.band-selected(-1, -1, -1px, -1px, false);
+        }
+        // the library's pages
+        else if (tool.id == "media") { root.library-page = 0; root.open("library", tool); }
+        else if (tool.id == "text") { root.library-page = 1; root.open("library", tool); }
+        else if (tool.id == "transitions") { root.library-page = 2; root.open("library", tool); }
+        else if (tool.id == "effects") { root.library-page = 3; root.open("library", tool); }
+        else if (tool.id == "filters") { root.library-page = 4; root.open("library", tool); }
+        else if (tool.id == "templates") { root.library-page = 5; root.open("library", tool); }
+        // straight to an action
+        else if (tool.id == "import") { Editor.shortcut("import"); }
+        else if (tool.id == "captions") { Editor.captions(); }
+        else if (tool.id == "speak") { Editor.speak(); }
+        else if (tool.id == "track") { Editor.add-track(); }
+        else if (tool.id == "split") { Editor.split(); }
+        else if (tool.id == "delete") { root.close(); Editor.delete-selected(); }
+        else if (tool.id == "duplicate") { Editor.shortcut("duplicate"); }
+        else if (tool.id == "freeze") { Editor.menu-selected("freeze"); }
+        else if (tool.id == "detach") { Editor.menu-selected("detach"); }
+        // a sheet of their own
+        else if (tool.id == "ratio") { root.open("ratio", tool); }
+        else if (tool.id == "project") { root.open("project", tool); }
+        // everything else is one of the inspector's sections
+        else {
+            root.section = tool.id == "edit" ? "Basic"
+                : tool.id == "speed" ? "Speed"
+                : tool.id == "animation" ? "Animation"
+                : tool.id == "adjust" ? "Adjust"
+                : tool.id == "clip-effects" ? "Effects"
+                : tool.id == "sound" ? "Sound"
+                : tool.id == "words" ? "Text"
+                : "Layer";
+            root.open("clip", tool);
+        }
+    }
+
+    // ── the tool rows ────────────────────────────────────────────────────
+    property <[PhoneTool]> main-tools: [
+        { id: "media", glyph: Glyph.film, label: I18n.t("Media") },
+        { id: "import", glyph: Glyph.import, label: I18n.t("Import") },
+        { id: "text", glyph: Glyph.text-mark, label: I18n.t("Text") },
+        { id: "effects", glyph: Glyph.sparkle, label: I18n.t("Effects") },
+        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filters") },
+        { id: "transitions", glyph: Glyph.transition, label: I18n.t("Transitions") },
+        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
+        { id: "speak", glyph: Glyph.volume, label: I18n.t("Speak") },
+        { id: "templates", glyph: Glyph.slot, label: I18n.t("Templates") },
+        { id: "ratio", glyph: Glyph.frame, label: I18n.t("Ratio") },
+        { id: "track", glyph: Glyph.rows, label: I18n.t("Add track") },
+        { id: "project", glyph: Glyph.info, label: I18n.t("Project") },
+    ];
+    property <PhoneTool> back-tool: { id: "back", glyph: Glyph.chevron-left, label: I18n.t("Back") };
+    property <[PhoneTool]> video-tools: [
+        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "edit", glyph: Glyph.settings, label: I18n.t("Edit") },
+        { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
+        { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
+        { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
+        { id: "adjust", glyph: Glyph.sun, label: I18n.t("Adjust") },
+        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("Effects") },
+        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filters") },
+        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
+        { id: "detach", glyph: Glyph.music, label: I18n.t("Detach audio") },
+        { id: "freeze", glyph: Glyph.image, label: I18n.t("Freeze") },
+        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
+        { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
+    ];
+    property <[PhoneTool]> image-tools: [
+        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "edit", glyph: Glyph.settings, label: I18n.t("Edit") },
+        { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
+        { id: "adjust", glyph: Glyph.sun, label: I18n.t("Adjust") },
+        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("Effects") },
+        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filters") },
+        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
+        { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
+    ];
+    property <[PhoneTool]> audio-tools: [
+        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
+        { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
+        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
+        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
+        { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
+    ];
+    property <[PhoneTool]> text-tools: [
+        { id: "words", glyph: Glyph.text-mark, label: I18n.t("Edit") },
+        { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
+        { id: "speak", glyph: Glyph.volume, label: I18n.t("Speak") },
+        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
+        { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
+    ];
+    property <[PhoneTool]> layer-tools: [
+        { id: "layer", glyph: Glyph.filter, label: I18n.t("Filter") },
+        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
+        { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
+    ];
+    property <[PhoneTool]> tools: !root.has-clip ? root.main-tools
+        : root.kind == ClipKind.image ? root.image-tools
+        : root.kind == ClipKind.audio ? root.audio-tools
+        : root.kind == ClipKind.text ? root.text-tools
+        : root.kind == ClipKind.filter ? root.layer-tools
+        : root.video-tools;
+
+    property <[string]> ratio-names: ["16:9", "16:9 4K", "9:16", "1:1", "4:3", "21:9"];
+
+    // ── the arrangement ──────────────────────────────────────────────────
+    property <length> bar-h: 52px;
+    property <length> transport-h: 48px;
+    property <length> tools-h: 80px;
+    property <length> body-h: Math.max(0px, root.height - root.bar-h - root.transport-h);
+    property <length> monitor-h: root.full ? root.body-h : root.body-h * 0.42;
+    property <length> below-y: root.bar-h + root.monitor-h + root.transport-h;
+    property <length> below-h: Math.max(0px, root.height - root.below-y);
+
+    // The project bar.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.bar-h;
+
+        HorizontalLayout {
+            padding-left: 4px;
+            padding-right: 12px;
+            spacing: 4px;
+
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.close;
+                    clicked => { Editor.shortcut("close-project"); }
+                }
+            }
+
+            Text {
+                horizontal-stretch: 1;
+                text: root.project-name;
+                color: Theme.fg;
+                font-size: Theme.fs-xl;
+                font-weight: Theme.weight-title;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.settings;
+                    clicked => { Editor.shortcut("settings"); }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                PillButton {
+                    label: I18n.t("Export");
+                    clicked => { Editor.shortcut("export"); }
+                }
+            }
+        }
+    }
+
+    // The monitor.
+    Seat {
+        x: 0;
+        y: root.bar-h;
+        width: root.width;
+        height: root.monitor-h;
+        kind: PaneKind.preview;
+        phone: true;
+    }
+
+    // The transport.
+    Rectangle {
+        x: 0;
+        y: root.bar-h + root.monitor-h;
+        width: root.width;
+        height: root.transport-h;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 4px;
+            spacing: 0px;
+
+            Text {
+                horizontal-stretch: 1;
+                text: Fmt.short-duration(Editor.playhead)
+                    + " / " + Fmt.short-duration(Editor.preview-duration);
+                color: Theme.fg-muted;
+                font-family: Theme.font-technical;
+                font-size: Theme.fs-lg;
+                vertical-alignment: center;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.undo;
+                    clicked => { Editor.shortcut("undo"); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.redo;
+                    clicked => { Editor.shortcut("redo"); }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 52px;
+                    height: 44px;
+                    Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 20px;
+                        background: play.pressed ? Theme.accent-hover : Theme.accent;
+
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            glyph: Editor.playing ? Glyph.pause : Glyph.play;
+                            size: 18px;
+                            tint: Theme.on-accent;
+                        }
+                    }
+                    play := TouchArea {
+                        clicked => { Editor.play-toggled(); }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.minus;
+                    enabled: !root.full;
+                    clicked => { Editor.shortcut("zoom-out"); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.plus;
+                    enabled: !root.full;
+                    clicked => { Editor.shortcut("zoom-in"); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: root.full ? Glyph.chevron-down : Glyph.maximize;
+                    clicked => { root.full = !root.full; }
+                }
+            }
+        }
+    }
+
+    // The timeline, and the tool row under it. Kept built while a sheet
+    // covers them, so the lanes are where they were left when it closes.
+    Seat {
+        x: 0;
+        y: root.below-y;
+        width: root.width;
+        height: Math.max(0px, root.below-h - root.tools-h);
+        visible: !root.full;
+        kind: PaneKind.timeline;
+        phone: true;
+    }
+
+    Rectangle {
+        x: 0;
+        y: root.below-y + Math.max(0px, root.below-h - root.tools-h);
+        width: root.width;
+        height: root.tools-h;
+        visible: !root.full;
+        background: Theme.panel;
+
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 1px;
+            background: Theme.line;
+        }
+
+        // Back stays put while the clip's tools scroll beside it.
+        if root.has-clip: ToolButton {
+            x: 4px;
+            y: 6px;
+            height: parent.height - 12px;
+            glyph: root.back-tool.glyph;
+            label: root.back-tool.label;
+            clicked => { root.run(root.back-tool); }
+        }
+
+        if root.has-clip: Rectangle {
+            x: 76px;
+            y: 14px;
+            width: 1px;
+            height: parent.height - 28px;
+            background: Theme.line;
+        }
+
+        Flickable {
+            x: root.has-clip ? 81px : 0px;
+            y: 0;
+            width: parent.width - self.x;
+            height: parent.height;
+            viewport-width: Math.max(self.width, row.preferred-width);
+            viewport-height: self.height;
+
+            row := HorizontalLayout {
+                height: root.tools-h;
+                padding: 6px;
+                spacing: 2px;
+
+                for tool in root.tools: ToolButton {
+                    glyph: tool.glyph;
+                    label: tool.label;
+                    current: root.sheet-tool == tool.id;
+                    clicked => { root.run(tool); }
+                }
+            }
+        }
+    }
+
+    // ── the sheet ────────────────────────────────────────────────────────
+    if root.sheet != "" && !root.full: Rectangle {
+        x: 0;
+        y: root.below-y;
+        width: root.width;
+        height: root.below-h;
+        background: Theme.panel;
+        border-top-left-radius: Theme.r-xl;
+        border-top-right-radius: Theme.r-xl;
+        clip: true;
+
+        // Nothing under the sheet takes its presses.
+        TouchArea { }
+
+        VerticalLayout {
+            Rectangle {
+                height: 48px;
+
+                Rectangle {
+                    x: 0;
+                    y: parent.height - 1px;
+                    width: parent.width;
+                    height: 1px;
+                    background: Theme.line;
+                }
+
+                HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 4px;
+                    spacing: 8px;
+
+                    Text {
+                        horizontal-stretch: 1;
+                        text: root.sheet-title;
+                        color: Theme.fg;
+                        font-size: Theme.fs-xl;
+                        font-weight: Theme.weight-title;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    // The bin's way onto the timeline: a drag cannot reach
+                    // lanes the sheet is covering.
+                    if root.sheet == "library" && root.library-page == 0
+                        && Editor.media-selected-count > 0: VerticalLayout {
+                        alignment: center;
+                        PillButton {
+                            label: I18n.t("Add to timeline");
+                            clicked => {
+                                Editor.shortcut("add-selected");
+                                root.close();
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        BarButton {
+                            glyph: Glyph.check;
+                            clicked => { root.close(); }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+
+                if root.sheet == "library": Seat {
+                    kind: PaneKind.media;
+                    phone: true;
+                    library-page <=> root.library-page;
+                }
+
+                if root.sheet == "clip" || root.sheet == "project": Seat {
+                    kind: PaneKind.inspector;
+                    phone: true;
+                    only-section: root.sheet == "clip" ? root.section : "";
+                }
+
+                if root.sheet == "ratio": Flickable {
+                    viewport-height: ratios.preferred-height;
+
+                    ratios := VerticalLayout {
+                        width: parent.width;
+                        padding: 12px;
+                        spacing: 8px;
+
+                        for name[index] in root.ratio-names: Rectangle {
+                            height: 48px;
+                            border-radius: Theme.r;
+                            background: Editor.ratio-index == index ? Theme.accent-soft : Theme.field;
+                            border-width: Editor.ratio-index == index ? 1px : 0px;
+                            border-color: Theme.accent;
+
+                            Text {
+                                x: 16px;
+                                y: 0;
+                                height: parent.height;
+                                text: name;
+                                color: Theme.fg;
+                                font-size: Theme.fs-xl;
+                                vertical-alignment: center;
+                            }
+
+                            TouchArea {
+                                clicked => { Editor.ratio-changed(index); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

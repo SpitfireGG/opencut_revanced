@@ -41,6 +41,9 @@ export global Theme {
     /// the tree is a property read away from it, so the window retones in a
     /// frame without anything being rebuilt.
     in-out property <bool> dark: true;
+    /// The phone layout is up: controls grow to a finger's size and
+    /// scrolled bodies take a drag. Set from Rust with Editor.compact.
+    in-out property <bool> touch: false;
 
     // ── type ─────────────────────────────────────────────────────────────
     //
@@ -98,7 +101,7 @@ export global Theme {
     out property <length> r-xl: 16px;
 
     // metrics
-    out property <length> h: 28px;        // standard control height
+    out property <length> h: touch ? 36px : 28px;  // standard control height
     out property <length> gap: 6px;
     out property <length> pad: 14px;      // panel horizontal padding
     out property <length> label-w: 62px;

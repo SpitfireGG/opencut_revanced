@@ -600,6 +600,10 @@ component StageOverlay inherits Rectangle {
 }
 
 export component PreviewPane inherits Rectangle {
+    /// The stage alone, without the header or the transport: the phone
+    /// layout draws its own transport under it.
+    in property <bool> bare;
+
     // ── what the output is ───────────────────────────────────────────────
     in property <int> output-width: 1920;
     in property <int> output-height: 1080;
@@ -677,7 +681,7 @@ export component PreviewPane inherits Rectangle {
     changed frames => { root.seed(); }
 
     Pane {
-        PaneHeader {
+        if !root.bare: PaneHeader {
             title: I18n.t("Preview");
 
             // The output, stated rather than implied. Tabular-ish and dim: it
@@ -928,7 +932,7 @@ export component PreviewPane inherits Rectangle {
         }
 
         // ── the transport ────────────────────────────────────────────────
-        Rectangle {
+        if !root.bare: Rectangle {
             height: 46px;
             background: Theme.panel;
 

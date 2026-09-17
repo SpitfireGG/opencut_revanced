@@ -39,6 +39,15 @@ export global Editor {
     // it draws out of them.
     in-out property <[SeatBox]> seats;
     in-out property <[DockDivider]> dividers;
+    /// The window is phone-narrow: the phone layout is up instead of the
+    /// dock. Set by the window from its width; see `COMPACT_WIDTH`.
+    in-out property <bool> compact;
+    /// The phone's back button, when the phone layout has something to put
+    /// away with it - a sheet, full screen, a selection. The window bumps
+    /// the token; PhoneEditor watches it. Otherwise the press is left to
+    /// the system, which leaves the app.
+    in-out property <bool> back-consumable;
+    in-out property <int> back-token;
 
     /// The workspace's own box, on the way *up*. Rust lays out in pixels
     /// because the minimum a pane may be squeezed to is a number of pixels,

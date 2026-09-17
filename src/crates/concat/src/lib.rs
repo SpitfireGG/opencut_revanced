@@ -900,7 +900,10 @@ pub fn run() -> Result<(), slint::PlatformError> {
     app.global::<Focus>()
         .on_release(|| Shell::with(|_, app| app.invoke_blur()));
     editor.on_shortcut(move |action: SharedString| match action.as_str() {
-        "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap" => {
+        // The rest are the phone layout's buttons, which have no menu of
+        // their own and reach the same rows.
+        "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
+        | "undo" | "redo" | "add-selected" | "close-project" => {
             Shell::with(|_, app| app.invoke_app_menu_selected(action.clone()));
         }
         _ => Shell::with(|shell, app| {

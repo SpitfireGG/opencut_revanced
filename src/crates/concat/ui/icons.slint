@@ -112,6 +112,9 @@ export enum Glyph {
     // the cutout's brushes
     brush,
     eraser,
+    // the phone layout's transport
+    undo,
+    redo,
 }
 
 component Stroked inherits Path {
@@ -191,6 +194,18 @@ export component Icon inherits Rectangle {
         size: root.size; tint: root.tint; weight: root.weight;
         commands: "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9"
             + "A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z";
+    }
+
+    // lucide/undo-2
+    if root.glyph == Glyph.undo: Stroked {
+        size: root.size; tint: root.tint; weight: root.weight;
+        commands: "M9 14 4 9l5-5 M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11";
+    }
+
+    // lucide/redo-2
+    if root.glyph == Glyph.redo: Stroked {
+        size: root.size; tint: root.tint; weight: root.weight;
+        commands: "m15 14 5-5-5-5 M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13";
     }
 
     // lucide/plus

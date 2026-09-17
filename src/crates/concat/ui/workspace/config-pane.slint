@@ -105,6 +105,12 @@ export component ConfigPane inherits Rectangle {
     /// The selected clip's media's audio tracks; see Editor.audio-tracks.
     in property <[string]> audio-tracks;
     property <bool> has-selection: root.selected.present;
+    /// No header strips, and one section only: the phone's clip tools pick
+    /// the panel, and the sheet around it carries the title.
+    in property <bool> bare;
+    /// The section to show when `bare`: "Basic", "Speed", "Animation",
+    /// "Adjust", "Effects", "Sound", "Text", "Layer".
+    in property <string> only-section;
     in property <string> project-name: I18n.t("Untitled project");
     in property <string> project-folder: "—";
     /// The active timeline, whose frame, rate and duration the rows below
@@ -272,8 +278,8 @@ export component ConfigPane inherits Rectangle {
 
     /// Which panel is up, resolved once rather than at each `if`: the same
     /// number means different things depending on what is selected.
-    property <string> showing: root.sections[Math.max(0,
-        Math.min(root.section, root.sections.length - 1))];
+    property <string> showing: root.bare && root.only-section != "" ? root.only-section
+        : root.sections[Math.max(0, Math.min(root.section, root.sections.length - 1))];
 
     // Go where the library just put something. On a fresh token, and once
     // on opening, so an inspector that was not on screen when the effect
@@ -290,7 +296,7 @@ export component ConfigPane inherits Rectangle {
 
     Pane {
         // ── details ──────────────────────────────────────────────────────
-        if !root.has-selection: Rectangle {
+        if !root.has-selection && !root.bare: Rectangle {
             // The same 44px as the panes either side of it; see PaneHeader.
             height: 44px;
 
@@ -413,7 +419,7 @@ export component ConfigPane inherits Rectangle {
         }
 
         // ── the clip inspector ───────────────────────────────────────────
-        if root.has-selection: Rectangle {
+        if root.has-selection && !root.bare: Rectangle {
             // Matched to the Details bar above, or the top of the column
             // would jump by four pixels every time a clip was selected.
             height: 44px;
@@ -477,7 +483,7 @@ export component ConfigPane inherits Rectangle {
         // The tab's sections, as a second strip under the first, in the
         // same segmented style. One section needs no strip: the tab already
         // says where you are.
-        if root.has-selection && root.sections.length > 1: Rectangle {
+        if root.has-selection && !root.bare && root.sections.length > 1: Rectangle {
             height: 40px;
             background: Theme.panel;
 

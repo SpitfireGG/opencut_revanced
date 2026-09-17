@@ -29,6 +29,15 @@ export component Seat inherits Rectangle {
     /// where the panel came from.
     in property <int> index;
 
+    // The phone layout's seats: the same views, without their own chrome.
+    // See PhoneEditor.
+    /// No headers, switchers or tabs, and the timeline's phone gestures.
+    in property <bool> phone;
+    /// The library's page.
+    in-out property <int> library-page;
+    /// The one inspector section to show; see ConfigPane.only-section.
+    in property <string> only-section;
+
     /// Its corner button was used.
     callback picked(kind: PaneKind);
     /// The bottom row of its dropdown was used: close this seat.
@@ -86,6 +95,8 @@ export component Seat inherits Rectangle {
             y: 0;
             width: root.width;
             height: root.height;
+            bare: root.phone;
+            tab <=> root.library-page;
 
             pane-picked(kind) => { root.picked(kind); }
             pane-seat: root.index;
@@ -139,6 +150,7 @@ export component Seat inherits Rectangle {
             y: 0;
             width: root.width;
             height: root.height;
+            bare: root.phone;
 
             pane-picked(kind) => { root.picked(kind); }
             pane-seat: root.index;
@@ -186,6 +198,8 @@ export component Seat inherits Rectangle {
             y: 0;
             width: root.width;
             height: root.height;
+            bare: root.phone;
+            only-section: root.only-section;
 
             pane-picked(kind) => { root.picked(kind); }
             pane-seat: root.index;
@@ -288,6 +302,7 @@ export component Seat inherits Rectangle {
             y: 0;
             width: root.width;
             height: root.height;
+            phone: root.phone;
 
             pane-picked(kind) => { root.picked(kind); }
             pane-seat: root.index;

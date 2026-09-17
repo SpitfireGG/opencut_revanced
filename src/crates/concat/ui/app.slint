@@ -33,6 +33,7 @@ import { Editor } from "editor.slint";
 import { PaneKind } from "workspace/pane-switcher.slint";
 import { RecentProjectData, StartData, StartScreen } from "start.slint";
 import { TitleBar } from "title-bar.slint";
+import { PhoneEditor } from "phone/phone-editor.slint";
 import {
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData,
 } from "inspector/clip-inspector.slint";
@@ -69,9 +70,9 @@ export component App inherits Window {
     default-font-weight: Theme.weight-body;
     preferred-width: 1400px;
     preferred-height: 900px;
-    // Below this the three columns cannot all hold their minimum and the panes
-    // start eating each other.
-    min-width: 900px;
+    // Below the dock's own width the phone layout takes over, so the
+    // window may be as narrow as a phone.
+    min-width: 360px;
     min-height: 560px;
     // So the shortcuts work before anything has been clicked. Without it the
     // window opens with nothing focused, and a key would have nowhere to be
@@ -154,8 +155,19 @@ export component App inherits Window {
     /// restore rather than maximise - whichever route maximised it.
     in-out property <bool> window-maximized;
     callback window-resized();
-    changed width => { root.window-resized(); }
+    changed width => {
+        root.window-resized();
+        root.measure();
+    }
     changed height => { root.window-resized(); }
+
+    // Phone-narrow is the phone layout. The same line the dock draws
+    // between its wide and compact shapes; see `COMPACT_WIDTH`.
+    function measure() {
+        Editor.compact = root.width < 860px;
+        Theme.touch = Editor.compact;
+    }
+    init => { root.measure(); }
     // The dialogs. Both are held at the root because Slint has no portal: a
     // modal has to be declared where it is drawn, and it is drawn over
     // everything.
@@ -318,6 +330,13 @@ export component App inherits Window {
         // its own letters and spaces before a key can walk up to this
         // scope, which is what keeps typing a title from cutting a clip.
         key-pressed(event) => {
+            if (event.text == Key.Back) {
+                if (!root.on-start && Editor.compact && Editor.back-consumable) {
+                    Editor.back-token += 1;
+                    return accept;
+                }
+                return reject;
+            }
             if (root.on-start) {
                 return reject;
             }
@@ -388,7 +407,9 @@ export component App inherits Window {
             padding-left: root.safe-area-insets.left;
             padding-right: root.safe-area-insets.right;
 
-            TitleBar {
+            // The phone layout carries its own project bar; the strip stays
+            // for the launch screen, which has nothing else at the top.
+            if !Editor.compact || root.on-start: TitleBar {
                 macos: root.macos;
                 minimal: root.on-start;
                 project-name: root.project-name;
@@ -437,8 +458,13 @@ export component App inherits Window {
             // nothing is passed to it: it is a box with four seats in it, and
             // the views inside those seats reach the state directly. See
             // editor.slint.
-            if !root.on-start: Workspace {
+            if !root.on-start && !Editor.compact: Workspace {
                 vertical-stretch: 1;
+            }
+
+            if !root.on-start && Editor.compact: PhoneEditor {
+                vertical-stretch: 1;
+                project-name: root.project-name;
             }
         }
     }

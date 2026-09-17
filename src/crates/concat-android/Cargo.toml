@@ -65,6 +65,8 @@ icon = "@mipmap/ic_launcher"
 [package.metadata.android.application.activity]
 config_changes = "orientation|keyboardHidden|screenSize"
 launch_mode = "singleTop"
+# The phone layout is drawn for a phone held upright.
+orientation = "portrait"
 
 [lints]
 workspace = true

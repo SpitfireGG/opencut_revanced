@@ -74,8 +74,11 @@ component Field inherits Rectangle {
     /// The label column. Wide enough for "Resolution" and "Frame rate" at
     /// 13px without wrapping, which is what keeps every value on one x.
     property <length> label-w: 112px;
+    /// On a phone the label goes above its value: 112px beside it is a
+    /// third of the screen.
+    property <bool> stacked: Theme.touch;
 
-    height: body.preferred-height + 32px;
+    height: body.preferred-height + 32px + (root.stacked ? 24px : 0px);
 
     Text {
         x: 0;
@@ -87,9 +90,9 @@ component Field inherits Rectangle {
     }
 
     body := VerticalLayout {
-        x: root.label-w + 16px;
-        y: 16px;
-        width: root.width - root.label-w - 16px;
+        x: root.stacked ? 0px : root.label-w + 16px;
+        y: root.stacked ? 40px : 16px;
+        width: root.stacked ? root.width : root.width - root.label-w - 16px;
         height: self.preferred-height;
         spacing: 8px;
 
@@ -389,28 +392,27 @@ export component StartScreen inherits Rectangle {
     /// room for both. Below that the recents go under the form.
     property <bool> side-by-side: root.recents.length > 0
         && root.width >= root.form-w + root.column-gap + root.recents-w + 96px;
-    property <length> pad: 48px;
+    property <length> pad: Theme.touch ? 16px : 48px;
 
-    property <length> overflow: Math.max(0px, sheet.height - root.height);
-    property <length> offset;
-    property <length> at: Math.max(-root.overflow, Math.min(0px, root.offset));
+    property <length> overflow: Math.max(0px, sheet.height + 2 * root.pad - root.height);
 
     background: Theme.page;
     clip: true;
 
-    wheel := TouchArea {
-        scroll-event(event) => {
-            root.offset = root.at + event.delta-y;
-            return EventResult.accept;
-        }
+    // Takes the wheel everywhere and a drag on a touch screen; see
+    // PaneScroll for why a desktop does not want the drag.
+    flick := Flickable {
+        interactive: Theme.touch;
+        viewport-width: self.width;
+        viewport-height: Math.max(self.height, sheet.height + 2 * root.pad);
 
         sheet := Rectangle {
             // Centred when it fits and pinned to the top when it does not,
             // which is what `justify-center` in a scroll container gives.
             x: (parent.width - self.width) / 2;
             y: root.overflow > 0px
-                ? root.at
-                : (parent.height - self.height) / 2;
+                ? root.pad
+                : (flick.height - self.height) / 2;
             width: Math.min(parent.width - 2 * root.pad,
                 root.side-by-side
                     ? root.form-w + root.column-gap + root.recents-w
@@ -495,7 +497,7 @@ export component StartScreen inherits Rectangle {
                         HorizontalLayout {
                             alignment: start;
                             SegmentedControl {
-                                width: 312px;
+                                width: Math.min(312px, parent.width);
                                 options: root.resolutions;
                                 current <=> root.res-index;
                                 enabled: !root.data.busy;
@@ -518,7 +520,7 @@ export component StartScreen inherits Rectangle {
                         HorizontalLayout {
                             alignment: start;
                             SegmentedControl {
-                                width: 300px;
+                                width: Math.min(300px, parent.width);
                                 options: root.rates;
                                 current <=> root.rate-index;
                                 enabled: !root.data.busy;
@@ -702,7 +704,7 @@ export component StartScreen inherits Rectangle {
         height: root.height;
         viewport: root.height;
         content: root.height + root.overflow;
-        offset: -root.at;
-        scrolled(to) => { root.offset = -to; }
+        offset: -flick.viewport-y;
+        scrolled(to) => { flick.viewport-y = -to; }
     }
 }

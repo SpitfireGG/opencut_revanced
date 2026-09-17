@@ -48,8 +48,11 @@ export component Modal inherits Rectangle {
     surface := Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        width: root.surface-width;
-        height: root.surface-height > 0px ? root.surface-height : body.preferred-height;
+        // Never wider or taller than the window leaves room for: on a phone
+        // the sheet is the screen, less a margin to tap outside of.
+        width: Math.min(root.surface-width, parent.width - 16px);
+        height: Math.min(parent.height - 16px,
+            root.surface-height > 0px ? root.surface-height : body.preferred-height);
         background: Theme.panel;
         border-width: 1px;
         border-color: Theme.line-strong;

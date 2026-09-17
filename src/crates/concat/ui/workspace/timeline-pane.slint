@@ -23,6 +23,11 @@ import { Lanes } from "../timeline/lanes.slint";
 // interior: a title strip above the tabs would be a third bar over a panel
 // that already has two.
 export component TimelinePane inherits Rectangle {
+    /// The phone's timeline: the lanes alone, with the playhead held in the
+    /// middle. The tabs, the tray and the lane switches are the phone
+    /// layout's tool row and sheets there.
+    in property <bool> phone;
+
     // ── the tabs ─────────────────────────────────────────────────────────
     in property <[TimelineTabData]> tabs;
     in property <int> current-tab;
@@ -123,7 +128,7 @@ export component TimelinePane inherits Rectangle {
     /// the lanes get a negative width and the whole grid folds up. Capped at
     /// half, which is the same rule the divider drag below enforces, so a
     /// pane that grows again finds its column where it left it.
-    property <length> headers-w: Math.max(0px,
+    property <length> headers-w: root.phone ? 0px : Math.max(0px,
         Math.min(root.header-width, root.width / 2));
     in property <length> ruler-height: 28px;
 
@@ -153,7 +158,7 @@ export component TimelinePane inherits Rectangle {
             background: Theme.line;
         }
 
-        TimelineTabs {
+        if !root.phone: TimelineTabs {
             tabs: root.tabs;
             current: root.current-tab;
 
@@ -172,7 +177,7 @@ export component TimelinePane inherits Rectangle {
             }
         }
 
-        TimelineTray {
+        if !root.phone: TimelineTray {
             tool: root.tool;
             snap: root.snap;
             selected-count: root.selected-count;
@@ -204,7 +209,7 @@ export component TimelinePane inherits Rectangle {
             vertical-stretch: 1;
             clip: true;
 
-            TrackHeaders {
+            if !root.phone: TrackHeaders {
                 x: 0;
                 y: 0;
                 width: root.headers-w;
@@ -223,7 +228,7 @@ export component TimelinePane inherits Rectangle {
                 removed(index) => { root.track-removed(index); }
             }
 
-            HairlineSplitter {
+            if !root.phone: HairlineSplitter {
                 x: root.headers-w;
                 y: 0;
                 height: parent.height;
@@ -238,9 +243,10 @@ export component TimelinePane inherits Rectangle {
             }
 
             lanes := Lanes {
-                x: root.headers-w + 1px;
+                x: root.phone ? 0px : root.headers-w + 1px;
                 y: 0;
-                width: Math.max(0px, parent.width - root.headers-w - 1px);
+                width: Math.max(0px, parent.width - self.x);
+                phone: root.phone;
                 height: parent.height;
 
                 tracks: root.tracks;
