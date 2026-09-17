@@ -911,7 +911,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         // their own and reach the same rows.
         "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
         | "undo" | "redo" | "add-selected" | "close-project" | "save" | "import-place"
-        | "new-from-gallery" => {
+        | "import-overlay" | "import-footage" | "new-from-gallery" => {
             Shell::with(|_, app| app.invoke_app_menu_selected(action.clone()));
         }
         _ => Shell::with(|shell, app| {
@@ -1200,7 +1200,23 @@ pub fn run() -> Result<(), slint::PlatformError> {
                         // the timeline, after what is there.
                         "import-place" => {
                             platform::pick_files_async(&i18n::t("Import media"), None, |paths| {
-                                on_ui(move |studio, _, _| studio.import_placed(paths, true))
+                                on_ui(move |studio, _, _| {
+                                    studio.import_placed(paths, studio::Placement::Main)
+                                })
+                            });
+                        }
+                        "import-overlay" => {
+                            platform::pick_media_async(&i18n::t("Import media"), |paths| {
+                                on_ui(move |studio, _, _| {
+                                    studio.import_placed(paths, studio::Placement::Overlay)
+                                })
+                            });
+                        }
+                        "import-footage" => {
+                            platform::pick_media_async(&i18n::t("Import media"), |paths| {
+                                on_ui(move |studio, _, _| {
+                                    studio.import_placed(paths, studio::Placement::Main)
+                                })
                             });
                         }
                         // The phone's home screen: a fresh project, then the
@@ -1209,7 +1225,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
                             state.quick_project();
                             if !state.on_start {
                                 platform::pick_media_async(&i18n::t("Import media"), |paths| {
-                                    on_ui(move |studio, _, _| studio.import_placed(paths, true))
+                                    on_ui(move |studio, _, _| {
+                                        studio.import_placed(paths, studio::Placement::Main)
+                                    })
                                 });
                             }
                         }

@@ -19,6 +19,8 @@ export enum ExportPhase { idle, running, done, failed }
 
 export struct ExportData {
     open: bool,
+    /// the project is taller than it is wide, so sizes read height last
+    portrait: bool,
     /// the file name, without folder or extension
     name: string,
     /// the whole path, already shortened for display by whoever owns it
@@ -232,7 +234,9 @@ export component ExportDialog inherits Modal {
                 label: I18n.t("Resolution");
                 Select {
                     current: root.data.resolution;
-                    options: ["3840 × 2160", "2560 × 1440", "1920 × 1080", "1280 × 720"];
+                    options: root.data.portrait
+                        ? ["2160 × 3840", "1440 × 2560", "1080 × 1920", "720 × 1280"]
+                        : ["3840 × 2160", "2560 × 1440", "1920 × 1080", "1280 × 720"];
                     details: ["4K", "QHD", "1080p", "720p"];
                     changed(index) => { root.resolution-changed(index); }
                 }

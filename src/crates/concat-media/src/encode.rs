@@ -88,6 +88,9 @@ impl VideoCodec {
     /// choice made for compatibility, not speed.
     pub fn encoders(self, hardware: bool) -> &'static [&'static str] {
         match self {
+            // A phone's build carries no x264: its silicon is the encoder.
+            VideoCodec::H264 if cfg!(target_os = "android") => &["libx264", "h264_mediacodec"],
+            VideoCodec::Hevc if cfg!(target_os = "android") => &["libx265", "hevc_mediacodec"],
             VideoCodec::H264 => &["libx264"],
             VideoCodec::Hevc if hardware && cfg!(target_os = "macos") => {
                 &["hevc_videotoolbox", "libx265"]
@@ -266,9 +269,12 @@ impl Encoder {
                 name: options.codec.label().to_owned(),
             })?;
         let videotoolbox = encoder_name.ends_with("_videotoolbox");
+        let mediacodec = encoder_name.ends_with("_mediacodec");
         // VideoToolbox takes its pictures planar-chroma; the software
-        // encoders take the planar 4:2:0 they all read.
+        // encoders take the planar 4:2:0 they all read. MediaCodec takes
+        // NV12, and eight bits only.
         let pixel_format = match (videotoolbox, options.ten_bit) {
+            _ if mediacodec => Pixel::NV12,
             (true, true) => Pixel::P010LE,
             (true, false) => Pixel::NV12,
             (false, true) => Pixel::YUV420P10LE,
@@ -304,6 +310,16 @@ impl Encoder {
         }
         if global_header {
             video.set_flags(ffmpeg::codec::Flags::GLOBAL_HEADER);
+        }
+        if mediacodec {
+            // A hardware encoder takes a bit rate, not a quality: the
+            // CRF is mapped onto bits per pixel per frame, 0.1 at CRF 20
+            // and halving every six steps, as x264's rate roughly does.
+            let per_second = fps.numerator() as f64 / fps.denominator().max(1) as f64;
+            let bits_per_pixel = 0.1 * 2f64.powf((20.0 - f64::from(options.crf)) / 6.0);
+            let rate = f64::from(width) * f64::from(height) * per_second * bits_per_pixel;
+            video.set_bit_rate(rate.clamp(1_000_000.0, 120_000_000.0) as usize);
+            video.set_gop(per_second.round().max(1.0) as u32 * 2);
         }
 
         let crf = options.crf.to_string();

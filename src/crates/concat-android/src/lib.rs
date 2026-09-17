@@ -295,6 +295,17 @@ fn android_main(app: slint::android::AndroidApp) {
     }
     // After the backend, which seeds the JavaVM the picker reaches for.
     picker::install(&app);
+    // FFmpeg's MediaCodec encoders reach Java through this VM; without it
+    // an export has no H.264 encoder at all.
+    unsafe extern "C" {
+        fn av_jni_set_java_vm(vm: *mut std::ffi::c_void, log: *mut std::ffi::c_void) -> i32;
+    }
+    // SAFETY: the pointer is the process's JavaVM, which lives as long as
+    // the process; FFmpeg only stores it.
+    let status = unsafe { av_jni_set_java_vm(app.vm_as_ptr().cast(), std::ptr::null_mut()) };
+    if status < 0 {
+        log::warn!("FFmpeg did not take the JavaVM ({status}); hardware encoding is off");
+    }
     if let Err(error) = concat::run() {
         log::error!("{error}");
     }

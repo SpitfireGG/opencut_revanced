@@ -3,6 +3,7 @@
 
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
+import { Glyph, Icon } from "../icons.slint";
 import { Row, Section, SectionBody, SectionHeader } from "../primitives/panel.slint";
 import { SegmentedControl } from "../primitives/segmented-control.slint";
 import { Select } from "../primitives/select.slint";
@@ -92,7 +93,7 @@ export component TextPanel inherits VerticalLayout {
                 body := TextInput {
                     x: 8px;
                     y: 6px;
-                    width: parent.width - 16px;
+                    width: parent.width - 16px - 28px;
                     height: parent.height - 12px;
                     text: root.selected.content;
                     color: Theme.fg;
@@ -104,11 +105,39 @@ export component TextPanel inherits VerticalLayout {
                     selection-background-color: Theme.accent;
                     selection-foreground-color: Theme.on-accent;
 
-                    // Committed on the way out rather than per keystroke, so a
-                    // title being typed is one change and not forty.
+                    // Drawn as it is typed - a held delete empties the title
+                    // on the monitor as it goes - and committed on the way
+                    // out, so a title being typed is one change and not forty.
+                    edited => { root.set-text(ClipTextField.content, self.text); }
                     changed has-focus => {
                         if (!self.has-focus) {
                             root.set-text(ClipTextField.content, self.text);
+                            root.commit();
+                        }
+                    }
+                }
+
+                // Every word at once.
+                if body.text != "": Rectangle {
+                    x: parent.width - self.width - 4px;
+                    y: 4px;
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: wipe.pressed ? Theme.field-active : Colors.transparent;
+
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        glyph: Glyph.close;
+                        size: 13px;
+                        tint: Theme.fg-muted;
+                    }
+
+                    wipe := TouchArea {
+                        clicked => {
+                            body.text = "";
+                            root.set-text(ClipTextField.content, "");
                             root.commit();
                         }
                     }

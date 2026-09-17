@@ -61,6 +61,14 @@ export struct TrackData {
     /// nothing can be dropped onto it. A lane you can see and hear and still
     /// knock sideways by accident is the one every editor locks.
     locked: bool,
+    /// Phone: the lane's part - 0 footage, 1 words, 2 overlays, 3 sound;
+    /// -1 on a desktop.
+    role: int,
+    /// Phone: the first row drawn for its part, which carries the part's
+    /// icon.
+    first: bool,
+    /// Nothing on it: a phone offers to add something there.
+    empty: bool,
 }
 
 /// A media item's filmstrip and the window of it one clip shows.

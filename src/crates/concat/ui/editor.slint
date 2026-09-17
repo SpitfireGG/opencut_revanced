@@ -60,9 +60,13 @@ export global Editor {
     /// Phone: which end of the selected clip had its handle tapped, for
     /// the "run it out to the media's end" chip; -1 for none.
     in-out property <int> edge-chip: -1;
-    /// Phone: the clip whose quick-action bar was put away by a tap
-    /// elsewhere; the bar comes back when a clip is tapped again.
-    in-out property <string> tip-closed-for;
+    /// Phone: the clip whose quick-action bar is up - set by a tap on a
+    /// clip, cleared by a tap anywhere else.
+    in-out property <string> tip-for;
+    /// Phone: a row's "add" was tapped. The part, and a token the phone
+    /// layout watches, since a global's callback is Rust's to answer.
+    in-out property <int> add-role;
+    in-out property <int> add-token;
 
     // ── highlights ──
     /// The last search's finds, best first.

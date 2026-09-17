@@ -84,8 +84,24 @@ pub fn probe(path: impl AsRef<Path>) -> Result<MediaInfo> {
     let input = ffmpeg::format::input(path).map_err(|error| ffi::fail("open", path, error))?;
 
     let duration = input.duration();
-    let duration =
-        (duration > 0).then(|| Rational::new(duration, i64::from(ffmpeg::sys::AV_TIME_BASE)));
+    // The container's figure, else the longest stream's: a phone's own
+    // recordings sometimes state only the latter, and a clip of media with
+    // no length can be pulled out without end.
+    let duration = (duration > 0)
+        .then(|| Rational::new(duration, i64::from(ffmpeg::sys::AV_TIME_BASE)))
+        .or_else(|| {
+            input
+                .streams()
+                .filter(|stream| stream.duration() > 0)
+                .map(|stream| {
+                    let base = stream.time_base();
+                    Rational::new(
+                        stream.duration() * i64::from(base.numerator()),
+                        i64::from(base.denominator()).max(1),
+                    )
+                })
+                .max()
+        });
 
     let video = match input.streams().best(ffmpeg::media::Type::Video) {
         Some(stream) => Some(video_stream(&stream, path)?),

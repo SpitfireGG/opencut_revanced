@@ -49,7 +49,8 @@ use crate::dock::{
     Dock, DockLayout, SEAT_GAP, default_dock, lay_out, nearest_row, row_at, row_top,
 };
 use crate::format::{
-    bytes, colour_of, eta, frames_timecode, hex_of, hex_with_alpha, wave_path, when_phrase,
+    bytes, colour_of, eta, frames_timecode, hex_of, hex_with_alpha, wave_bars, wave_path,
+    when_phrase,
 };
 use crate::host::{
     CachedStrip, Host, MediaArt, WindowArt, cached_media_art, cached_window_art, image_at,
@@ -83,6 +84,39 @@ pub const OUTPUTS: [(i32, i32); 10] = [
 /// monitor draws the same zones; see StageOverlay in preview-pane.slint.
 const SAFE_ZONE_XS: [f64; 3] = [0.0593, 0.7898, 0.9407];
 const SAFE_ZONE_YS: [f64; 3] = [0.1406, 0.599, 0.87];
+
+/// A lane's part on a phone, in the order the rows are drawn, the way VN
+/// lays its timeline out: the footage, the words, what is laid over the
+/// picture, the sound. A spare lane is empty and not drawn.
+pub const ROLE_FOOTAGE: u8 = 0;
+pub const ROLE_WORDS: u8 = 1;
+pub const ROLE_OVERLAY: u8 = 2;
+pub const ROLE_SOUND: u8 = 3;
+pub const ROLE_SPARE: u8 = 4;
+/// The four lanes a project starts with, bottom first, and the part each
+/// plays on a phone: the words over the overlays over the footage.
+const STANDARD_LANES: [u8; 4] = [ROLE_FOOTAGE, ROLE_OVERLAY, ROLE_WORDS, ROLE_SOUND];
+
+fn clip_role(kind: model::ClipKind) -> u8 {
+    match kind {
+        model::ClipKind::Video => ROLE_FOOTAGE,
+        model::ClipKind::Text => ROLE_WORDS,
+        model::ClipKind::Image | model::ClipKind::Layer => ROLE_OVERLAY,
+        model::ClipKind::Audio => ROLE_SOUND,
+    }
+}
+
+/// Where imported files go.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Placement {
+    /// Into the bin only.
+    Bin,
+    /// Onto the timeline: footage and stills on the main track, sound on
+    /// its lane.
+    Main,
+    /// Onto the timeline, a still as an overlay.
+    Overlay,
+}
 
 /// A moment worth a Reel, found in a clip's sound; see `find_highlights`.
 pub struct Highlight {
@@ -1625,27 +1659,189 @@ impl Studio {
     /// it, then the sound, then whatever is empty - the stack order kept
     /// within each group.
     fn row_order(&self) -> Vec<usize> {
-        let timeline = self.timeline();
-        let mut order: Vec<usize> = (0..timeline.tracks.len()).rev().collect();
+        let mut order: Vec<usize> = (0..self.timeline().tracks.len()).rev().collect();
         if self.compact {
-            let group = |index: &usize| {
-                let lane = &timeline.tracks[*index].id;
-                timeline
-                    .clips
-                    .iter()
-                    .filter(|clip| &clip.track_id == lane)
-                    .map(|clip| match clip.kind {
-                        model::ClipKind::Video => 0,
-                        model::ClipKind::Text => 1,
-                        model::ClipKind::Image | model::ClipKind::Layer => 2,
-                        model::ClipKind::Audio => 3,
-                    })
-                    .min()
-                    .unwrap_or(4)
-            };
-            order.sort_by_key(group);
+            let roles = self.lane_roles();
+            order.sort_by_key(|index| roles[*index]);
         }
         order
+    }
+
+    /// Each lane's part on a phone, by model index; see `ROLE_FOOTAGE`.
+    ///
+    /// A lane with clips on it takes the part of what is on it: footage if
+    /// any video is, else words, else overlays, else sound. A lane of
+    /// stills is the footage when nothing lies under it - the gallery's
+    /// photos are the main track, not an overlay. Every part with no lane
+    /// of its own is then given an empty one, the standard lane for that
+    /// part first; an empty lane left over is spare and is not drawn.
+    pub fn lane_roles(&self) -> Vec<u8> {
+        let timeline = self.timeline();
+        let mut lowest_used = true;
+        let mut roles: Vec<Option<u8>> = timeline
+            .tracks
+            .iter()
+            .map(|lane| {
+                let mut kinds = timeline
+                    .clips
+                    .iter()
+                    .filter(|clip| clip.track_id == lane.id)
+                    .map(|clip| clip.kind)
+                    .peekable();
+                kinds.peek()?;
+                let (mut role, mut stills) = (ROLE_SPARE, true);
+                for kind in kinds {
+                    stills &= kind == model::ClipKind::Image;
+                    role = role.min(clip_role(kind));
+                }
+                if stills && lowest_used {
+                    role = ROLE_FOOTAGE;
+                }
+                lowest_used = false;
+                Some(role)
+            })
+            .collect();
+        for role in [ROLE_FOOTAGE, ROLE_WORDS, ROLE_OVERLAY, ROLE_SOUND] {
+            if roles.contains(&Some(role)) {
+                continue;
+            }
+            let standard = STANDARD_LANES
+                .iter()
+                .position(|held| *held == role)
+                .filter(|index| roles.get(*index) == Some(&None));
+            if let Some(index) = standard.or_else(|| roles.iter().position(Option::is_none)) {
+                roles[index] = Some(role);
+            }
+        }
+        roles
+            .into_iter()
+            .map(|role| role.unwrap_or(ROLE_SPARE))
+            .collect()
+    }
+
+    /// The lane a new clip of `role` goes on, from `start` for `duration`:
+    /// one of its part with room, and - for words and overlays - above all
+    /// the footage, so nothing is hidden behind the video. A new lane on
+    /// top when there is none.
+    fn lane_for(&mut self, role: u8, start: f64, duration: f64) -> Option<String> {
+        let found = {
+            let roles = self.lane_roles();
+            let timeline = self.timeline();
+            let used = |lane: &Track| timeline.clips.iter().any(|clip| clip.track_id == lane.id);
+            let footage_top = timeline
+                .tracks
+                .iter()
+                .enumerate()
+                .filter(|(index, lane)| roles[*index] == ROLE_FOOTAGE && used(lane))
+                .map(|(index, _)| index)
+                .max();
+            let free = |lane: &Track| {
+                !timeline.clips.iter().any(|clip| {
+                    clip.track_id == lane.id
+                        && clip.start < start + duration - 1e-6
+                        && start < clip.start + clip.duration - 1e-6
+                })
+            };
+            let above = |index: usize| {
+                !matches!(role, ROLE_WORDS | ROLE_OVERLAY)
+                    || footage_top.is_none_or(|top| index > top)
+            };
+            let fits =
+                |index: usize, lane: &Track| above(index) && free(lane) && !self.locked(&lane.id);
+            let tracks = &timeline.tracks;
+            (0..tracks.len())
+                .find(|index| roles[*index] == role && fits(*index, &tracks[*index]))
+                .or_else(|| {
+                    (0..tracks.len())
+                        .find(|index| roles[*index] == ROLE_SPARE && fits(*index, &tracks[*index]))
+                })
+                .map(|index| tracks[index].id.clone())
+        };
+        found.or_else(|| self.apply(Command::AddTrack))
+    }
+
+    /// Where the footage ends: the end of the last clip on a footage lane.
+    fn main_end(&self) -> f64 {
+        let roles = self.lane_roles();
+        let timeline = self.timeline();
+        timeline
+            .clips
+            .iter()
+            .filter(|clip| {
+                timeline
+                    .tracks
+                    .iter()
+                    .position(|lane| lane.id == clip.track_id)
+                    .is_some_and(|index| roles[index] == ROLE_FOOTAGE)
+            })
+            .map(|clip| clip.start + clip.duration)
+            .fold(0.0, f64::max)
+    }
+
+    /// A phone's placement: a new clip with no lane named goes on the lane
+    /// of its part (see `lane_for`), and new footage joins the end of the
+    /// main track.
+    fn place(&mut self, command: Command) -> Command {
+        match command {
+            Command::Batch { commands } => Command::Batch {
+                commands: commands.into_iter().map(|each| self.place(each)).collect(),
+            },
+            Command::AddTextClip {
+                track_id: None,
+                start,
+                style,
+                duration,
+                offset_y,
+            } => Command::AddTextClip {
+                track_id: self.lane_for(ROLE_WORDS, start, duration.unwrap_or(5.0)),
+                start,
+                style,
+                duration,
+                offset_y,
+            },
+            Command::AddLayerClip {
+                track_id: None,
+                start,
+                duration,
+                effect_id,
+                name,
+            } => Command::AddLayerClip {
+                track_id: self.lane_for(ROLE_OVERLAY, start, duration.unwrap_or(5.0)),
+                start,
+                duration,
+                effect_id,
+                name,
+            },
+            Command::AddClipAtFirstFree { media_id, start } => self
+                .place_media(media_id.clone(), false, start)
+                .unwrap_or(Command::AddClipAtFirstFree { media_id, start }),
+            other => other,
+        }
+    }
+
+    /// The command that puts media on a phone's timeline: footage (and a
+    /// still, unless `overlay`) at the end of the main track, sound and
+    /// overlays at `at`.
+    fn place_media(&mut self, media_id: String, overlay: bool, at: f64) -> Option<Command> {
+        let item = self.project().media_by_id(&media_id)?;
+        let length = item.duration.unwrap_or(5.0);
+        let role = match item.kind {
+            model::MediaKind::Video => ROLE_FOOTAGE,
+            model::MediaKind::Audio => ROLE_SOUND,
+            model::MediaKind::Image if overlay => ROLE_OVERLAY,
+            model::MediaKind::Image => ROLE_FOOTAGE,
+        };
+        let start = if role == ROLE_FOOTAGE {
+            self.main_end()
+        } else {
+            at
+        };
+        let track_id = self.lane_for(role, start, length)?;
+        Some(Command::AddClip {
+            media_id,
+            track_id,
+            start,
+        })
     }
 
     pub fn locked(&self, track_id: &str) -> bool {
@@ -1662,6 +1858,20 @@ impl Studio {
     /// thing on it, without the lanes having to be typed. An empty one takes
     /// the middle size.
     fn lane_height(&self, lane: &Track) -> f32 {
+        if self.compact {
+            let roles = self.lane_roles();
+            let index = self
+                .timeline()
+                .tracks
+                .iter()
+                .position(|held| held.id == lane.id);
+            return match index.map(|index| roles[index]) {
+                Some(ROLE_FOOTAGE) => 64.0,
+                Some(ROLE_WORDS | ROLE_SOUND) => 34.0,
+                Some(ROLE_OVERLAY) => 38.0,
+                _ => 0.0,
+            };
+        }
         match self.lane_size(&lane.id) {
             TrackSize::Small => LANE_SMALL,
             TrackSize::Medium => LANE_MEDIUM,
@@ -1743,6 +1953,11 @@ impl Studio {
         // Anything but an inspector commit ends the coalescing window; the
         // commit path sets `last_commit` again right after calling here.
         self.last_commit = None;
+        let command = if self.compact {
+            self.place(command)
+        } else {
+            command
+        };
         let session = self.session.as_mut()?;
         match session.apply(command) {
             Ok(view) => {
@@ -2318,13 +2533,13 @@ impl Studio {
 
     /// Probes the files on a worker and adds what probed as media.
     pub fn import(&mut self, paths: Vec<std::path::PathBuf>) {
-        self.import_placed(paths, false);
+        self.import_placed(paths, Placement::Bin);
     }
 
     /// [`Studio::import`], and with `place` each new item also goes on the
     /// timeline, one after another from its end - the phone's way in, where
     /// there is no bin to drag from.
-    pub fn import_placed(&mut self, paths: Vec<std::path::PathBuf>, place: bool) {
+    pub fn import_placed(&mut self, paths: Vec<std::path::PathBuf>, place: Placement) {
         if paths.is_empty() || self.session.is_none() {
             return;
         }
@@ -2336,19 +2551,16 @@ impl Studio {
                     .collect::<Vec<_>>()
             },
             move |studio, _, _, results| {
-                let known: HashSet<String> = studio
-                    .project()
-                    .media
-                    .iter()
-                    .map(|item| item.id.clone())
-                    .collect();
                 let mut commands = Vec::new();
                 let mut failures = Vec::new();
+                let mut picked = Vec::new();
                 for result in results {
                     match result {
-                        Ok(summary) => commands.push(Command::AddMedia {
-                            item: summary.to_new_media(),
-                        }),
+                        Ok(summary) => {
+                            let item = summary.to_new_media();
+                            picked.push(item.path.clone());
+                            commands.push(Command::AddMedia { item });
+                        }
                         Err(error) => failures.push(error),
                     }
                 }
@@ -2356,17 +2568,29 @@ impl Studio {
                 if !commands.is_empty() {
                     studio.apply(Command::Batch { commands });
                 }
-                if place {
-                    let fresh: Vec<String> = studio
-                        .project()
-                        .media
+                // Every file picked, already in the bin or not: picking a
+                // file twice puts it on the timeline twice.
+                if place != Placement::Bin {
+                    let ids: Vec<String> = picked
                         .iter()
-                        .filter(|item| !known.contains(&item.id))
-                        .map(|item| item.id.clone())
+                        .filter_map(|path| {
+                            studio
+                                .project()
+                                .media
+                                .iter()
+                                .find(|item| &item.path == path)
+                                .map(|item| item.id.clone())
+                        })
                         .collect();
-                    for media_id in fresh {
-                        let start = f64::from(studio.duration());
-                        studio.apply(Command::AddClipAtFirstFree { media_id, start });
+                    let at = f64::from(studio.playhead);
+                    for media_id in ids {
+                        let command = studio
+                            .place_media(media_id.clone(), place == Placement::Overlay, at)
+                            .unwrap_or(Command::AddClipAtFirstFree {
+                                media_id,
+                                start: f64::from(studio.duration()),
+                            });
+                        studio.apply(command);
                     }
                 }
                 if let Some(error) = failures.first() {
@@ -2684,11 +2908,14 @@ impl Studio {
         let step = |seconds: f32| (seconds * WAVE_STEPS).round() / WAVE_STEPS;
         let (source_start, duration) = (step(clip.source_start as f32), step(clip.duration as f32));
         let gain = clip.volume as f32;
-        let key = format!("{art}|{source_start:.3}|{duration:.3}|{gain:.3}");
+        // A video's sound is drawn as bars under its frames; see Clip.
+        let bars = clip.kind == model::ClipKind::Video;
+        let key = format!("{art}|{source_start:.3}|{duration:.3}|{gain:.3}|{bars}");
         if let Some(cached) = self.waves.borrow().get(&key) {
             return cached.clone();
         }
-        let built = SharedString::from(wave_path(peaks, source_start, duration, gain));
+        let draw = if bars { wave_bars } else { wave_path };
+        let built = SharedString::from(draw(peaks, source_start, duration, gain));
         self.waves.borrow_mut().insert(key, built.clone());
         built
     }
@@ -3699,6 +3926,8 @@ impl Studio {
             ClipTextField::FontFamily => text.font_family = value.to_owned(),
             _ => {}
         }
+        // The monitor follows the words as they are typed.
+        self.request_preview();
     }
 
     pub fn clip_set_colour(&mut self, field: ClipTextField, value: slint::Color) {
@@ -6383,14 +6612,28 @@ impl Studio {
 
         let timeline = self.timeline();
         let mut top = 0.0;
+        let roles = self.lane_roles();
+        let mut shown = HashSet::new();
         sync(
             &models.tracks,
             self.row_order()
                 .into_iter()
-                .map(|index| &timeline.tracks[index])
-                .map(|lane| {
+                .map(|index| (index, &timeline.tracks[index]))
+                .map(|(index, lane)| {
                     let height = self.lane_height(lane);
+                    let role = if self.compact {
+                        roles[index]
+                    } else {
+                        ROLE_SPARE
+                    };
                     let row = TrackData {
+                        role: if role == ROLE_SPARE {
+                            -1
+                        } else {
+                            i32::from(role)
+                        },
+                        first: height > 0.0 && shown.insert(role),
+                        empty: !timeline.clips.iter().any(|clip| clip.track_id == lane.id),
                         id: lane.id.as_str().into(),
                         visible: lane.visible,
                         muted: lane.muted,
@@ -7421,6 +7664,7 @@ impl Studio {
             .filter(|clip| clip.kind == model::ClipKind::Text)
             .count();
         ExportData {
+            portrait: height > width,
             open: self.export.open,
             name: self.export.name.as_str().into(),
             path: format!(

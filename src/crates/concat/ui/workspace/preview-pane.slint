@@ -512,7 +512,12 @@ component Overlap inherits Rectangle {
     out property <float> t: Math.max(root.y0, root.item.cy - root.item.h / 2);
     out property <float> b: Math.min(root.y1, root.item.cy + root.item.h / 2);
 
-    visible: root.item.selected && root.l < root.r && root.t < root.b;
+    /// Only what is laid over the picture: the footage itself always
+    /// fills the zones, and saying so tells nobody anything.
+    out property <bool> overlay: root.item.kind == ClipKind.text
+        || root.item.kind == ClipKind.image;
+
+    visible: root.item.selected && root.overlay && root.l < root.r && root.t < root.b;
     // Relative to the box the overlap is measured against.
     x: (root.l - root.x0) * root.frame-w;
     y: (root.t - root.y0) * root.frame-h;
@@ -684,7 +689,9 @@ component StageOverlay inherits Rectangle {
                 frame-w: root.width;
                 frame-h: root.height;
                 ink: Theme.touch ? #ffffff : Theme.accent;
-                visible: entry.selected && !other.selected && self.l < self.r && self.t < self.b;
+                visible: entry.selected && !other.selected && self.overlay
+                    && (other.kind == ClipKind.text || other.kind == ClipKind.image)
+                    && self.l < self.r && self.t < self.b;
             }
         }
     }

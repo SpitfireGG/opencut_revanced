@@ -166,24 +166,74 @@ pub fn wave_path(
     duration: f32,
     gain: f32,
 ) -> String {
-    /// Columns across the clip. Enough that the steps read as columns and
-    /// not as a bar chart, few enough that the string stays a few kilobytes.
-    const COLUMNS: usize = 128;
+    let mut path = String::new();
+    for (column, amplitude) in wave_columns(peaks, source_start, duration, gain, COLUMNS)
+        .into_iter()
+        .enumerate()
+    {
+        let left = column as f32 / COLUMNS as f32;
+        let right = (column + 1) as f32 / COLUMNS as f32;
+        let (top, bottom) = (0.5 - amplitude * 0.48, 0.5 + amplitude * 0.48);
+        path.push_str(&format!(
+            "M {left:.4} {top:.4} L {right:.4} {top:.4} \
+             L {right:.4} {bottom:.4} L {left:.4} {bottom:.4} Z "
+        ));
+    }
+    path
+}
+
+/// Columns across a clip's envelope. Enough that the steps read as columns
+/// and not as a bar chart, few enough that the string stays a few kilobytes.
+const COLUMNS: usize = 128;
+
+/// The same envelope as thin bars standing on the foot of the box, the way
+/// VN draws a video's sound under its frames: `|ıl|ı`.
+pub fn wave_bars(
+    peaks: &concat_media::Peaks,
+    source_start: f32,
+    duration: f32,
+    gain: f32,
+) -> String {
+    const BARS: usize = 96;
+    let mut path = String::new();
+    for (bar, amplitude) in wave_columns(peaks, source_start, duration, gain, BARS)
+        .into_iter()
+        .enumerate()
+    {
+        // A third of each column is bar, the rest is air between bars.
+        let left = (bar as f32 + 0.33) / BARS as f32;
+        let right = (bar as f32 + 0.67) / BARS as f32;
+        let top = 1.0 - amplitude.max(0.08);
+        path.push_str(&format!(
+            "M {left:.4} {top:.4} L {right:.4} {top:.4} L {right:.4} 1 L {left:.4} 1 Z "
+        ));
+    }
+    path
+}
+
+/// Each column's loudness, `0..=1`, from the buckets that fall under it.
+fn wave_columns(
+    peaks: &concat_media::Peaks,
+    source_start: f32,
+    duration: f32,
+    gain: f32,
+    columns: usize,
+) -> Vec<f32> {
     /// Silence still draws a sliver: a hairline through the middle of a clip
     /// rather than a gap in it.
-    const FLOOR: f32 = 0.012;
+    const FLOOR: f32 = 0.025;
 
     if duration <= 0.0 || peaks.min.is_empty() || peaks.buckets_per_second <= 0.0 {
-        return String::new();
+        return Vec::new();
     }
     let gain = gain.max(0.0);
     let count = peaks.min.len().min(peaks.max.len());
     let per_second = peaks.buckets_per_second;
-    let mut path = String::with_capacity(COLUMNS * 56);
+    let mut out = Vec::with_capacity(columns);
 
-    for column in 0..COLUMNS {
-        let left = column as f32 / COLUMNS as f32;
-        let right = (column + 1) as f32 / COLUMNS as f32;
+    for column in 0..columns {
+        let left = column as f32 / columns as f32;
+        let right = (column + 1) as f32 / columns as f32;
         let from = ((source_start + left * duration) * per_second)
             .floor()
             .max(0.0) as usize;
@@ -197,14 +247,9 @@ pub fn wave_path(
                 high = high.max(peaks.max[index]);
             }
         }
-        let amplitude = ((high.max(-low) * gain).clamp(0.0, 1.0) * 0.48).max(FLOOR);
-        let (top, bottom) = (0.5 - amplitude, 0.5 + amplitude);
-        path.push_str(&format!(
-            "M {left:.4} {top:.4} L {right:.4} {top:.4} \
-             L {right:.4} {bottom:.4} L {left:.4} {bottom:.4} Z "
-        ));
+        out.push((high.max(-low) * gain).clamp(0.0, 1.0).max(FLOOR));
     }
-    path
+    out
 }
 
 /// Today's date as a project is named after it on a phone: "Sep 17, 2026".

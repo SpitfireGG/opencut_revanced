@@ -3,6 +3,7 @@
 
 import { Theme } from "../theme/theme.slint";
 import { Fmt } from "../util.slint";
+import { Glyph, Icon } from "../icons.slint";
 import { Pane } from "pane.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { MenuItemData } from "../primitives/context-menu.slint";
@@ -71,6 +72,9 @@ export component TimelinePane inherits Rectangle {
     callback scrubbed(seconds: float);
     /// Phone: a handle of a selected clip tapped; 0 head, 1 tail.
     callback clip-edge-tapped(id: string, edge: int);
+    /// Phone: see Lanes.clip-tapped and Lanes.row-add.
+    callback clip-tapped(id: string);
+    callback row-add(role: int);
     /// A press on an empty stretch of lane; see Editor.blur.
     callback floor-pressed();
     callback clip-pressed(id: string, additive: bool, edge: int);
@@ -135,6 +139,8 @@ export component TimelinePane inherits Rectangle {
     property <length> headers-w: root.phone ? 0px : Math.max(0px,
         Math.min(root.header-width, root.width / 2));
     in property <length> ruler-height: root.phone ? 22px : 28px;
+    /// The phone's column of row icons.
+    property <length> gutter-w: 52px;
 
     /// Clamped here rather than only where it is written, so a pane dragged
     /// taller than its own track stack cannot stay parked past the end. The
@@ -246,8 +252,46 @@ export component TimelinePane inherits Rectangle {
                 }
             }
 
+            // The phone's row icons: one per part, beside its first row,
+            // scrolling with the rows. A tap adds to that row.
+            if root.phone: Rectangle {
+                x: 0;
+                y: 0;
+                width: root.gutter-w;
+                height: parent.height;
+                clip: true;
+
+                for track in root.tracks: Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: root.ruler-height + track.top - root.at + (track.height - self.height) / 2;
+                    width: 40px;
+                    height: Math.min(40px, track.height);
+                    visible: track.first && track.role >= 0 && track.height > 0
+                        && self.y + self.height > root.ruler-height;
+                    border-radius: 20px;
+                    background: row-icon.pressed ? Theme.field : Colors.transparent;
+
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        glyph: track.role == 0 ? Glyph.film
+                            : track.role == 1 ? Glyph.text-mark
+                            : track.role == 2 ? Glyph.image
+                            : Glyph.music;
+                        size: 19px;
+                        weight: 1.7;
+                        tint: Theme.fg;
+                    }
+
+                    row-icon := TouchArea {
+                        enabled: parent.visible;
+                        clicked => { root.row-add(track.role); }
+                    }
+                }
+            }
+
             lanes := Lanes {
-                x: root.phone ? 0px : root.headers-w + 1px;
+                x: root.phone ? root.gutter-w : root.headers-w + 1px;
                 y: 0;
                 width: Math.max(0px, parent.width - self.x);
                 phone: root.phone;
@@ -266,6 +310,8 @@ export component TimelinePane inherits Rectangle {
 
                 scrubbed(seconds) => { root.scrubbed(seconds); }
                 clip-edge-tapped(id, edge) => { root.clip-edge-tapped(id, edge); }
+                clip-tapped(id) => { root.clip-tapped(id); }
+                row-add(role) => { root.row-add(role); }
                 floor-pressed => { root.floor-pressed(); }
                 clip-pressed(id, additive, edge) => { root.clip-pressed(id, additive, edge); }
                 clip-dragged(seconds, pixels) => { root.clip-dragged(seconds, pixels); }

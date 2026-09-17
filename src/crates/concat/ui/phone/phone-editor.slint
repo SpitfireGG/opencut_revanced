@@ -131,9 +131,8 @@ component PillButton inherits Rectangle {
 }
 
 /// The Reels tab's own furniture over a full-screen preview, so the edit is
-/// seen as it will be: the camera and title at the top, the rail of
-/// buttons down the right, the account and caption at the bottom. A tap
-/// anywhere plays or pauses, as a Reel does.
+/// seen as it will be: the title at the top, the account and caption at
+/// the bottom. A tap anywhere plays or pauses, as a Reel does.
 component ReelChrome inherits Rectangle {
     in property <string> name;
 
@@ -200,50 +199,11 @@ component ReelChrome inherits Rectangle {
         }
     }
 
-    // The rail: like, comment, share, more.
-    VerticalLayout {
-        x: parent.width - self.width - 8px;
-        y: parent.height - self.preferred-height - 40px;
-        width: 56px;
-        spacing: 18px;
-
-        for mark[i] in [Glyph.heart, Glyph.comment, Glyph.send]: VerticalLayout {
-            spacing: 4px;
-            HorizontalLayout {
-                alignment: center;
-                Icon { glyph: mark; size: 28px; weight: 1.8; tint: #ffffff; }
-            }
-            Text {
-                text: i == 0 ? "1.2K" : i == 1 ? "48" : I18n.t("Share");
-                color: #ffffff;
-                font-size: 12px;
-                horizontal-alignment: center;
-            }
-        }
-        Text {
-            text: "•••";
-            color: #ffffff;
-            font-size: 14px;
-            horizontal-alignment: center;
-        }
-        HorizontalLayout {
-            alignment: center;
-            Rectangle {
-                width: 30px;
-                height: 30px;
-                border-radius: 6px;
-                border-width: 2px;
-                border-color: #ffffff;
-                background: #333333;
-            }
-        }
-    }
-
     // The account and caption.
     VerticalLayout {
         x: 14px;
         y: parent.height - self.preferred-height - 36px;
-        width: parent.width - 100px;
+        width: parent.width - 28px;
         spacing: 10px;
 
         HorizontalLayout {
@@ -356,8 +316,8 @@ export component PhoneEditor inherits Rectangle {
     // the sheet, rather than showing the project's details in its place.
     changed has-clip => {
         Editor.edge-chip = -1;
-        if (root.sheet == "clip" || root.sheet == "highlights"
-            || (root.sheet == "library" && root.library-page >= 3)) {
+        if (!root.has-clip && (root.sheet == "clip" || root.sheet == "highlights"
+            || (root.sheet == "library" && root.library-page >= 3))) {
             root.close();
         }
     }
@@ -390,13 +350,14 @@ export component PhoneEditor inherits Rectangle {
     }
 
     function run(tool: PhoneTool) {
+        root.tip-off();
         if (tool.id == "back") {
             root.close();
             Editor.band-selected(-1, -1, -1px, -1px, false);
         }
         // the library's pages
         else if (tool.id == "media") { root.library-page = 0; root.open("library", tool.id, tool.label); }
-        else if (tool.id == "text") { root.library-page = 1; root.open("library", tool.id, tool.label); }
+        else if (tool.id == "text") { root.add(1); }
         else if (tool.id == "transitions") { root.library-page = 2; root.open("library", tool.id, tool.label); }
         else if (tool.id == "effects") { root.library-page = 3; root.open("library", tool.id, tool.label); }
         else if (tool.id == "filters") { root.library-page = 4; root.open("library", tool.id, tool.label); }
@@ -563,16 +524,33 @@ export component PhoneEditor inherits Rectangle {
     /// Where the lanes begin.
     property <length> lower-y: root.bar-h + root.monitor-h + root.transport-h + root.grip-h;
 
-    /// The quick-action bar is up: a clip is selected and no tap elsewhere
-    /// has put the bar away since.
+    /// The quick-action bar is up: the selected clip was just tapped, and
+    /// nothing else has been touched since.
     property <bool> tip-open: root.has-clip && root.sheet == "" && !root.full
-        && Editor.selected-clip.id != Editor.tip-closed-for;
+        && Editor.tip-for != "" && Editor.tip-for == Editor.selected-clip.id;
     function tip-off() {
-        Editor.tip-closed-for = Editor.selected-clip.id;
+        Editor.tip-for = "";
         Editor.edge-chip = -1;
     }
-    /// The column of add buttons beside the lanes.
-    property <length> adds-w: 56px;
+
+    // A row's "add", from the timeline: what each part adds.
+    property <int> add-token: Editor.add-token;
+    changed add-token => { root.add(Editor.add-role); }
+    function add(role: int) {
+        root.tip-off();
+        if (role == 0) {
+            Editor.shortcut("import-footage");
+        } else if (role == 1) {
+            // A title at the playhead, straight away, with its words open.
+            Editor.library-add-text("default");
+            root.section = "Text";
+            root.open("clip", "words", I18n.t("Text"));
+        } else if (role == 2) {
+            Editor.shortcut("import-overlay");
+        } else {
+            Editor.shortcut("import-place");
+        }
+    }
 
     // The project bar.
     Rectangle {
@@ -901,52 +879,10 @@ export component PhoneEditor inherits Rectangle {
         visible: !root.full;
         background: Theme.panel;
 
-        // What can be put on it, one lane's worth each, the way VN offers
-        // them beside the lanes.
-        //
-        // In the lanes' order - footage, words, overlays, sound - from the
-        // top, under the ruler; they scroll when the timeline is short.
-        Flickable {
-            x: 0;
-            y: 22px;
-            width: root.adds-w;
-            height: parent.height - 22px;
-            viewport-height: adds.preferred-height;
-
-            adds := VerticalLayout {
-                width: parent.width;
-                padding-top: 4px;
-                spacing: 2px;
-                alignment: start;
-
-                for add in [
-                    { id: "film", glyph: Glyph.film },
-                    { id: "text", glyph: Glyph.text-mark },
-                    { id: "image", glyph: Glyph.image },
-                    { id: "music", glyph: Glyph.music },
-                ]: HorizontalLayout {
-                    alignment: center;
-                    BarButton {
-                        width: 40px;
-                        height: 40px;
-                        glyph: add.glyph;
-                        clicked => {
-                            if (add.id == "text") {
-                                root.library-page = 1;
-                                root.open("library", "text", I18n.t("Text"));
-                            } else {
-                                Editor.shortcut("import-place");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         Seat {
-            x: root.adds-w;
+            x: 0;
             y: 0;
-            width: parent.width - root.adds-w;
+            width: parent.width;
             height: parent.height;
             kind: PaneKind.timeline;
             phone: true;
@@ -1117,6 +1053,20 @@ export component PhoneEditor inherits Rectangle {
         { id: "lock", glyph: Glyph.lock, label: I18n.t("Lock") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
+
+    // Any touch away from the bar puts it away. Over everything above the
+    // lanes; in the lanes, a touch reaches them and they put it away.
+    if root.tip-open: TouchArea {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.lower-y;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.tip-off();
+            }
+        }
+    }
 
     if root.tip-open: Rectangle {
         x: (root.width - self.width) / 2;

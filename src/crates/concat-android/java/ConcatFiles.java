@@ -12,6 +12,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
+import android.os.ParcelFileDescriptor;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.MediaStore;
@@ -19,12 +20,15 @@ import android.provider.OpenableColumns;
 import android.util.Log;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.nio.channels.FileChannel;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * The system's document picker, for an activity that has no Java of its
@@ -159,18 +163,76 @@ public class ConcatFiles extends Fragment {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                List<String> paths = new ArrayList<String>();
-                File dir = new File(appContext.getExternalFilesDir(null), "Imported");
+                final File dir = new File(appContext.getExternalFilesDir(null), "Imported");
                 dir.mkdirs();
-                for (Uri uri : uris) {
-                    File out = unique(dir, displayName(appContext, uri));
-                    if (copy(appContext, uri, out)) {
-                        paths.add(out.getAbsolutePath());
+                // Every file at once, each on its own thread; the answer
+                // keeps the order they were picked in.
+                final String[] found = new String[uris.size()];
+                final CountDownLatch left = new CountDownLatch(uris.size());
+                for (int i = 0; i < uris.size(); i++) {
+                    final int index = i;
+                    final Uri uri = uris.get(i);
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                File out = place(appContext, dir, uri);
+                                if (out != null) {
+                                    found[index] = out.getAbsolutePath();
+                                }
+                            } finally {
+                                left.countDown();
+                            }
+                        }
+                    }, TAG).start();
+                }
+                try {
+                    left.await();
+                } catch (InterruptedException ignored) {
+                }
+                List<String> paths = new ArrayList<String>();
+                for (String path : found) {
+                    if (path != null) {
+                        paths.add(path);
                     }
                 }
                 filesPicked(paths.toArray(new String[0]));
             }
         }, TAG).start();
+    }
+
+    /**
+     * Where a picked file lives in Imported/: the copy already there when
+     * one of the same name and size is, else a fresh copy. Null when the
+     * copy fails.
+     */
+    private static File place(Context context, File dir, Uri uri) {
+        String name = displayName(context, uri);
+        long size = size(context, uri);
+        File same = new File(dir, name);
+        if (size > 0 && same.isFile() && same.length() == size) {
+            return same;
+        }
+        File out = unique(dir, name);
+        return copy(context, uri, out) ? out : null;
+    }
+
+    /** The size the provider reports, or -1. */
+    private static long size(Context context, Uri uri) {
+        Cursor cursor = null;
+        try {
+            cursor = context.getContentResolver().query(
+                    uri, new String[] {OpenableColumns.SIZE}, null, null, null);
+            if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) {
+                return cursor.getLong(0);
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        return -1;
     }
 
     /** The name the picker showed for the file, or one made from the URI. */
@@ -219,6 +281,44 @@ public class ConcatFiles extends Fragment {
     }
 
     private static boolean copy(Context context, Uri uri, File out) {
+        // A file behind the URI copies in the kernel, without passing
+        // through a buffer here; a pipe falls back to the stream below.
+        ParcelFileDescriptor descriptor = null;
+        try {
+            descriptor = context.getContentResolver().openFileDescriptor(uri, "r");
+            if (descriptor != null && descriptor.getStatSize() > 0) {
+                FileChannel from = new FileInputStream(descriptor.getFileDescriptor()).getChannel();
+                FileChannel to = new FileOutputStream(out).getChannel();
+                try {
+                    long total = descriptor.getStatSize();
+                    long done = 0;
+                    while (done < total) {
+                        long moved = to.transferFrom(from, done, total - done);
+                        if (moved <= 0) {
+                            break;
+                        }
+                        done += moved;
+                    }
+                    if (done == total) {
+                        return true;
+                    }
+                } finally {
+                    to.close();
+                    from.close();
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Channel copy failed, streaming instead: " + e);
+        } finally {
+            try {
+                if (descriptor != null) descriptor.close();
+            } catch (IOException ignored) {
+            }
+        }
+        return stream(context, uri, out);
+    }
+
+    private static boolean stream(Context context, Uri uri, File out) {
         InputStream in = null;
         OutputStream os = null;
         try {
@@ -227,7 +327,7 @@ public class ConcatFiles extends Fragment {
                 return false;
             }
             os = new FileOutputStream(out);
-            byte[] buffer = new byte[1 << 16];
+            byte[] buffer = new byte[1 << 20];
             int read;
             while ((read = in.read(buffer)) > 0) {
                 os.write(buffer, 0, read);

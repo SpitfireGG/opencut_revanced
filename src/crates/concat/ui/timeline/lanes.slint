@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
 import { Fmt, Payload } from "../util.slint";
 import { Glyph, Icon } from "../icons.slint";
@@ -146,6 +147,8 @@ component Clip inherits Rectangle {
     /// Phone: a handle of the selected clip tapped, not dragged. 0 head,
     /// 1 tail.
     callback edge-tapped(edge: int);
+    /// Phone: the clip tapped, not dragged: its quick actions come up.
+    callback tapped();
 
     property <color> mark: Paint.mark(root.item.kind);
     property <color> well: Paint.well(root.item.kind);
@@ -166,7 +169,7 @@ component Clip inherits Rectangle {
     property <length> body-h: Math.max(0px, root.height - root.header-h);
     /// The phone's sound strip under a video's frames; none without sound.
     property <length> sound-h: root.phone && root.item.kind == ClipKind.video
-        && root.item.wave != "" ? Math.min(16px, root.body-h * 0.3) : 0px;
+        && root.item.wave != "" ? Math.min(14px, root.body-h * 0.28) : 0px;
     /// A fade on a picture clip is shaded in a band at the foot instead of
     /// over the whole body: the fade is an *audio* property, and shading the
     /// picture would say it fades to black. Sound shades its whole body; a
@@ -291,18 +294,18 @@ component Clip inherits Rectangle {
             y: parent.height - root.sound-h;
             width: parent.width;
             height: root.sound-h;
-            background: #00000099;
+            background: #000000b3;
 
             Path {
                 x: 0;
-                y: 1px;
+                y: 2px;
                 width: parent.width;
-                height: parent.height - 2px;
+                height: parent.height - 3px;
                 commands: root.item.wave;
                 viewbox-width: 1;
                 viewbox-height: 1;
                 fit: fill;
-                fill: Theme.accent;
+                fill: #ffffffcc;
             }
         }
 
@@ -562,12 +565,15 @@ component Clip inherits Rectangle {
                         if (!self.travelled && !root.held && root.down-edge >= 0
                             && root.edge-at == root.down-edge) {
                             root.edge-tapped(root.edge-at);
+                        } else if (!self.travelled && root.down-edge < 0) {
+                            root.tapped();
                         }
                     } else if (!self.travelled) {
                         // A tap: select it, as a press and release with
                         // nothing moved in between.
                         root.pressed(false, -1);
                         root.released();
+                        root.tapped();
                     }
                 } else if (event.kind == PointerEventKind.cancel && self.moving) {
                     root.released();
@@ -662,6 +668,10 @@ export component Lanes inherits Rectangle {
     callback scrubbed(seconds: float);
     /// Phone: a handle of a selected clip tapped; see Clip.edge-tapped.
     callback clip-edge-tapped(id: string, edge: int);
+    /// Phone: a clip tapped; see Clip.tapped.
+    callback clip-tapped(id: string);
+    /// Phone: an empty row's "Tap to add" tapped, with the row's part.
+    callback row-add(role: int);
     /// A press on an empty stretch of lane, before the band it may become.
     callback floor-pressed();
     callback clip-pressed(id: string, additive: bool, edge: int);
@@ -927,6 +937,38 @@ export component Lanes inherits Rectangle {
                 }
             }
 
+            // ── the phone's empty rows ───────────────────────────────────────
+            //
+            // A row with nothing on it says what it is for and adds it when
+            // tapped, the way VN's rows do.
+            for track in root.tracks: Rectangle {
+                x: Math.max(0px, root.at(0));
+                y: root.ruler-height + track.top - root.track-scroll + 4px;
+                width: Math.max(0px, root.width - self.x - 8px);
+                height: Math.max(0px, track.height - 8px);
+                visible: root.phone && track.empty && track.role >= 0 && track.height > 0
+                    && self.y + self.height > root.ruler-height && self.y < root.height;
+                border-radius: Theme.r-sm;
+                background: add-row.pressed ? Theme.field-active : Theme.field;
+
+                Text {
+                    x: 12px;
+                    height: parent.height;
+                    text: track.role == 0 ? I18n.t("Tap to add video")
+                        : track.role == 1 ? I18n.t("Tap to add text")
+                        : track.role == 2 ? I18n.t("Tap to add an overlay")
+                        : I18n.t("Tap to add music");
+                    color: Theme.fg-dim;
+                    font-size: Theme.fs;
+                    vertical-alignment: center;
+                }
+
+                add-row := TouchArea {
+                    enabled: parent.visible;
+                    clicked => { root.row-add(track.role); }
+                }
+            }
+
             // ── the clips ────────────────────────────────────────────────────
             for entry in root.clips: Clip {
                 x: root.at(entry.start);
@@ -946,6 +988,7 @@ export component Lanes inherits Rectangle {
                 pan-started => { root.pan-start(); }
                 panned(dx, dy) => { root.pan(dx, dy); }
                 edge-tapped(edge) => { root.clip-edge-tapped(entry.id, edge); }
+                tapped => { root.clip-tapped(entry.id); }
                 // Read back through the lane the clip sits on rather than carried
                 // on the clip: locking is a property of the lane, and copying it
                 // onto every clip would be one more thing to keep in step.
