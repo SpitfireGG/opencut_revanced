@@ -1,19 +1,9 @@
 name: Release
 
 # Pushing a tag that starts with v (v0.3.0, v0.3.0-alpha.1, ...) builds the
-# app for every platform and architecture, desktops and phones, and
-# publishes a GitHub release under that tag with one bundle per target and
-# a checksum file. A tag
-# containing a hyphen is a pre-release. The tag must be the workspace's
-# version, alone or with a pre-release suffix: a release whose files say
-# one number and whose tag says another is a release nobody can reason
-# about.
-#
-# The bundles are self-contained: the macOS .dmg carries its FFmpeg dylibs
-# and is notarised when the signing secrets are set; the Linux tarball and
-# the Windows zip carry the FFmpeg runtime libraries beside the binary; the
-# Android .apk is signed with the repository's key, and the iOS .ipa is
-# signed by the tester on the way onto the phone.
+# app for Android and publishes a GitHub release under that tag with the
+# Android APK and a checksum file. A tag containing a hyphen is a pre-release.
+# The tag must be the workspace's version, alone or with a pre-release suffix.
 on:
   push:
     tags: ["v*"]
@@ -56,11 +46,6 @@ jobs:
           # v0.2.1-alpha.22 both produce Concat-0.2.1-* files.
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  build:
-    needs: [check]
-    uses: ./.github/workflows/build-app.yml
-    secrets: inherit
-
   phones:
     needs: [check]
     uses: ./.github/workflows/android.yml
@@ -68,7 +53,7 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [check, build, phones]
+    needs: [check, phones]
     runs-on: ubuntu-latest
     permissions:
       contents: write
