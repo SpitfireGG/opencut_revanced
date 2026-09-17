@@ -1192,7 +1192,7 @@ dependencies = [
 
 [[package]]
 name = "concat"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-api",
  "concat-core",
@@ -1220,7 +1220,7 @@ dependencies = [
 
 [[package]]
 name = "concat-android"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "android-build",
  "android_logger",
@@ -1233,7 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "concat-api"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "base64 0.22.1",
  "concat-effects",
@@ -1248,7 +1248,7 @@ dependencies = [
 
 [[package]]
 name = "concat-cli"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "clap",
  "concat-api",
@@ -1263,11 +1263,11 @@ dependencies = [
 
 [[package]]
 name = "concat-core"
-version = "1.0.3"
+version = "1.0.4"
 
 [[package]]
 name = "concat-effects"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-core",
  "concat-project",
@@ -1279,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "concat-export"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-core",
  "concat-effects",
@@ -1292,7 +1292,7 @@ dependencies = [
 
 [[package]]
 name = "concat-host"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-core",
  "concat-export",
@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "concat-media"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-core",
  "ffmpeg-the-third",
@@ -1322,7 +1322,7 @@ dependencies = [
 
 [[package]]
 name = "concat-project"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-core",
  "serde",
@@ -1332,7 +1332,7 @@ dependencies = [
 
 [[package]]
 name = "concat-render"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-core",
  "concat-effects",
@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "concat-server"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-api",
  "prost",
@@ -1358,7 +1358,7 @@ dependencies = [
 
 [[package]]
 name = "concat-speech"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "bzip2 0.6.1",
  "concat-host",
@@ -1373,7 +1373,7 @@ dependencies = [
 
 [[package]]
 name = "concat-text"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "fontdb",
  "rustybuzz",
@@ -1383,7 +1383,7 @@ dependencies = [
 
 [[package]]
 name = "concat-vision"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "concat-core",
  "concat-project",

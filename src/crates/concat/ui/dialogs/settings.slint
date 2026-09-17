@@ -261,7 +261,8 @@ component PageTab inherits Rectangle {
 
     callback clicked();
 
-    height: 30px;
+    // A finger's height on a phone, where the column is icons only.
+    height: Theme.touch ? 44px : 30px;
     border-radius: Theme.r-sm;
     background: root.current ? Theme.field-active
         : touch.has-hover ? Theme.field
@@ -278,12 +279,12 @@ component PageTab inherits Rectangle {
             alignment: center;
             Icon {
                 glyph: root.glyph;
-                size: 13px;
+                size: Theme.touch ? 18px : 13px;
                 tint: root.current ? Theme.fg : Theme.fg-muted;
             }
         }
 
-        Text {
+        if !Theme.touch: Text {
             horizontal-stretch: 1;
             text: root.label;
             color: root.current ? Theme.fg : Theme.fg-muted;
@@ -373,10 +374,11 @@ export component SettingsDialog inherits Modal {
     open: root.data.open;
     title: I18n.t("Settings");
     glyph: Glyph.settings;
-    surface-width: 640px;
+    // On a phone, the whole screen less the modal's margin.
+    surface-width: Theme.touch ? 4000px : 640px;
     // Fixed rather than fitted: the pages are different lengths and a sheet
     // that resized as you moved between them would be its own distraction.
-    surface-height: 460px;
+    surface-height: Theme.touch ? 4000px : 460px;
 
     HorizontalLayout {
         // The clipboard takes text, so there has to be a TextInput holding
@@ -407,7 +409,7 @@ export component SettingsDialog inherits Modal {
 
         // ── the pages ────────────────────────────────────────────────────
         Rectangle {
-            width: 164px;
+            width: Theme.touch ? 60px : 164px;
 
             Rectangle {
                 x: parent.width - 1px;

@@ -6,17 +6,18 @@ import { Theme } from "../theme/theme.slint";
 import { Fmt } from "../util.slint";
 import { Glyph, Icon } from "../icons.slint";
 import { Editor } from "../editor.slint";
-import { ClipKind } from "../timeline/model.slint";
+import { ClipKind, ClipTextField } from "../timeline/model.slint";
 import { PaneKind } from "../workspace/pane-switcher.slint";
 import { Seat } from "../workspace/seat.slint";
 
-// The editor on a phone, held upright, laid out the way VN and every other
-// phone editor lay it out:
+// The editor on a phone, held upright, laid out the way VN lays it out:
 //
-//   the project bar         close · name · settings · Export
-//   the monitor             the picture, and nothing round it
-//   the transport           time · undo · redo · play · full screen
-//   the timeline            lanes only, the playhead fixed in the middle
+//   the project bar         back · frame shape · settings · save · export
+//   the monitor             the picture, as large as the rest allows
+//   the transport           time · start · play · end · undo · redo
+//   the timeline            a third of the screen: the add buttons, then
+//                           the lanes with the playhead fixed in the middle
+//   the colour strip        only while a title is selected
 //   the tool row            what can be added, or what can be done to the
 //                           selected clip
 //
@@ -136,10 +137,10 @@ export component PhoneEditor inherits Rectangle {
 
     // ── what is open ─────────────────────────────────────────────────────
     //
-    // The sheet over the timeline: "" for none, "library" for a library
+    // The sheet over the lower half: "" for none, "library" for a library
     // page, "clip" for an inspector section, "project" for the details and
     // "ratio" for the frame shape. `sheet-tool` is the button that opened
-    // it, which is also what the sheet is called.
+    // it, and `sheet-title` is what the sheet is called.
     property <string> sheet;
     property <string> sheet-tool;
     property <string> sheet-title;
@@ -149,6 +150,8 @@ export component PhoneEditor inherits Rectangle {
     property <bool> full;
 
     property <bool> has-clip: Editor.selected-clip.present;
+    property <ClipKind> kind: Editor.selected-clip.kind;
+    property <bool> is-title: root.has-clip && root.kind == ClipKind.text;
 
     // The back button; see Editor.back-token.
     property <bool> can-back: root.sheet != "" || root.full || root.has-clip;
@@ -156,7 +159,6 @@ export component PhoneEditor inherits Rectangle {
     property <int> back-token: Editor.back-token;
     changed back-token => { root.back(); }
     init => { Editor.back-consumable = root.can-back; }
-    property <ClipKind> kind: Editor.selected-clip.kind;
 
     // A clip sheet is about the selection; when the selection goes, so does
     // the sheet, rather than showing the project's details in its place.
@@ -166,7 +168,7 @@ export component PhoneEditor inherits Rectangle {
         }
     }
 
-    public function close() {
+    function close() {
         root.sheet = "";
         root.sheet-tool = "";
     }
@@ -183,14 +185,14 @@ export component PhoneEditor inherits Rectangle {
         }
     }
 
-    function open(kind: string, tool: PhoneTool) {
-        if (root.sheet-tool == tool.id) {
+    function open(kind: string, id: string, title: string) {
+        if (root.sheet-tool == id) {
             root.close();
             return;
         }
         root.sheet = kind;
-        root.sheet-tool = tool.id;
-        root.sheet-title = tool.label;
+        root.sheet-tool = id;
+        root.sheet-title = title;
     }
 
     function run(tool: PhoneTool) {
@@ -199,12 +201,12 @@ export component PhoneEditor inherits Rectangle {
             Editor.band-selected(-1, -1, -1px, -1px, false);
         }
         // the library's pages
-        else if (tool.id == "media") { root.library-page = 0; root.open("library", tool); }
-        else if (tool.id == "text") { root.library-page = 1; root.open("library", tool); }
-        else if (tool.id == "transitions") { root.library-page = 2; root.open("library", tool); }
-        else if (tool.id == "effects") { root.library-page = 3; root.open("library", tool); }
-        else if (tool.id == "filters") { root.library-page = 4; root.open("library", tool); }
-        else if (tool.id == "templates") { root.library-page = 5; root.open("library", tool); }
+        else if (tool.id == "media") { root.library-page = 0; root.open("library", tool.id, tool.label); }
+        else if (tool.id == "text") { root.library-page = 1; root.open("library", tool.id, tool.label); }
+        else if (tool.id == "transitions") { root.library-page = 2; root.open("library", tool.id, tool.label); }
+        else if (tool.id == "effects") { root.library-page = 3; root.open("library", tool.id, tool.label); }
+        else if (tool.id == "filters") { root.library-page = 4; root.open("library", tool.id, tool.label); }
+        else if (tool.id == "templates") { root.library-page = 5; root.open("library", tool.id, tool.label); }
         // straight to an action
         else if (tool.id == "import") { Editor.shortcut("import"); }
         else if (tool.id == "captions") { Editor.captions(); }
@@ -215,12 +217,10 @@ export component PhoneEditor inherits Rectangle {
         else if (tool.id == "duplicate") { Editor.shortcut("duplicate"); }
         else if (tool.id == "freeze") { Editor.menu-selected("freeze"); }
         else if (tool.id == "detach") { Editor.menu-selected("detach"); }
-        // a sheet of their own
-        else if (tool.id == "ratio") { root.open("ratio", tool); }
-        else if (tool.id == "project") { root.open("project", tool); }
+        else if (tool.id == "project") { root.open("project", tool.id, tool.label); }
         // everything else is one of the inspector's sections
         else {
-            root.section = tool.id == "edit" ? "Basic"
+            root.section = tool.id == "edit" || tool.id == "cutout" ? "Basic"
                 : tool.id == "speed" ? "Speed"
                 : tool.id == "animation" ? "Animation"
                 : tool.id == "adjust" ? "Adjust"
@@ -228,7 +228,7 @@ export component PhoneEditor inherits Rectangle {
                 : tool.id == "sound" ? "Sound"
                 : tool.id == "words" ? "Text"
                 : "Layer";
-            root.open("clip", tool);
+            root.open("clip", tool.id, tool.label);
         }
     }
 
@@ -237,26 +237,26 @@ export component PhoneEditor inherits Rectangle {
         { id: "media", glyph: Glyph.film, label: I18n.t("Media") },
         { id: "import", glyph: Glyph.import, label: I18n.t("Import") },
         { id: "text", glyph: Glyph.text-mark, label: I18n.t("Text") },
-        { id: "effects", glyph: Glyph.sparkle, label: I18n.t("Effects") },
-        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filters") },
+        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
+        { id: "effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
         { id: "transitions", glyph: Glyph.transition, label: I18n.t("Transitions") },
         { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
         { id: "speak", glyph: Glyph.volume, label: I18n.t("Speak") },
         { id: "templates", glyph: Glyph.slot, label: I18n.t("Templates") },
-        { id: "ratio", glyph: Glyph.frame, label: I18n.t("Ratio") },
         { id: "track", glyph: Glyph.rows, label: I18n.t("Add track") },
         { id: "project", glyph: Glyph.info, label: I18n.t("Project") },
     ];
     property <PhoneTool> back-tool: { id: "back", glyph: Glyph.chevron-left, label: I18n.t("Back") };
     property <[PhoneTool]> video-tools: [
+        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
+        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
+        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
-        { id: "edit", glyph: Glyph.settings, label: I18n.t("Edit") },
+        { id: "cutout", glyph: Glyph.brush, label: I18n.t("Cutout") },
         { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
         { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
         { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
         { id: "adjust", glyph: Glyph.sun, label: I18n.t("Adjust") },
-        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("Effects") },
-        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filters") },
         { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
         { id: "detach", glyph: Glyph.music, label: I18n.t("Detach audio") },
         { id: "freeze", glyph: Glyph.image, label: I18n.t("Freeze") },
@@ -264,18 +264,19 @@ export component PhoneEditor inherits Rectangle {
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> image-tools: [
+        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
+        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
+        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
-        { id: "edit", glyph: Glyph.settings, label: I18n.t("Edit") },
+        { id: "cutout", glyph: Glyph.brush, label: I18n.t("Cutout") },
         { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
         { id: "adjust", glyph: Glyph.sun, label: I18n.t("Adjust") },
-        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("Effects") },
-        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filters") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> audio-tools: [
-        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
         { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
+        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
         { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
         { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
@@ -302,16 +303,51 @@ export component PhoneEditor inherits Rectangle {
         : root.kind == ClipKind.filter ? root.layer-tools
         : root.video-tools;
 
-    property <[string]> ratio-names: ["16:9", "16:9 4K", "9:16", "1:1", "4:3", "21:9"];
+    // ── the frame shapes ─────────────────────────────────────────────────
+    //
+    // Rows of the engine's OUTPUTS table, as Instagram uses them: Reels and
+    // Stories are 9:16, the feed takes 4:5 and 1:1, and landscape is for
+    // the rest. 4K first; Instagram takes it and scales it down itself.
+    property <[int]> shape-rows: [6, 2, 7, 9, 8, 3, 1, 0];
+    property <[string]> shape-names: [
+        "9:16 · 4K", "9:16 · 1080p", "4:5 · 4K", "4:5 · 1080p",
+        "1:1 · 4K", "1:1 · 1080p", "16:9 · 4K", "16:9 · 1080p",
+    ];
+    property <[string]> shape-uses: [
+        I18n.t("Reels and Stories"), I18n.t("Reels and Stories"),
+        I18n.t("Feed, portrait"), I18n.t("Feed, portrait"),
+        I18n.t("Feed, square"), I18n.t("Feed, square"),
+        I18n.t("Landscape"), I18n.t("Landscape"),
+    ];
+    property <string> shape-now: Editor.ratio-index == 6 ? "9:16"
+        : Editor.ratio-index == 2 ? "9:16"
+        : Editor.ratio-index == 7 || Editor.ratio-index == 9 ? "4:5"
+        : Editor.ratio-index == 8 || Editor.ratio-index == 3 ? "1:1"
+        : Editor.ratio-index == 1 || Editor.ratio-index == 0 ? "16:9"
+        : Editor.ratio-index == 4 ? "4:3"
+        : Editor.ratio-index == 5 ? "21:9"
+        : I18n.t("Custom");
+
+    /// "1.25s", the way VN reads time.
+    pure function seconds(t: float) -> string {
+        return "\{Math.floor(Math.max(0, t))}."
+            + Fmt.pad2(Math.mod(Math.floor(Math.max(0, t) * 100), 100)) + "s";
+    }
 
     // ── the arrangement ──────────────────────────────────────────────────
-    property <length> bar-h: 52px;
+    property <length> bar-h: 56px;
     property <length> transport-h: 48px;
-    property <length> tools-h: 80px;
-    property <length> body-h: Math.max(0px, root.height - root.bar-h - root.transport-h);
-    property <length> monitor-h: root.full ? root.body-h : root.body-h * 0.42;
-    property <length> below-y: root.bar-h + root.monitor-h + root.transport-h;
-    property <length> below-h: Math.max(0px, root.height - root.below-y);
+    property <length> tools-h: 76px;
+    property <length> strip-h: root.is-title ? 52px : 0px;
+    /// A third of the screen, and never so little the lanes are unusable.
+    property <length> timeline-h: Math.max(150px, root.height * 0.34);
+    property <length> lower-h: root.full ? 0px
+        : root.timeline-h + root.strip-h + root.tools-h;
+    property <length> monitor-h: Math.max(80px,
+        root.height - root.bar-h - root.transport-h - root.lower-h);
+    property <length> lower-y: root.bar-h + root.monitor-h + root.transport-h;
+    /// The column of add buttons beside the lanes.
+    property <length> adds-w: 56px;
 
     // The project bar.
     Rectangle {
@@ -328,19 +364,49 @@ export component PhoneEditor inherits Rectangle {
             VerticalLayout {
                 alignment: center;
                 BarButton {
-                    glyph: Glyph.close;
+                    glyph: Glyph.chevron-left;
+                    icon-size: 24px;
                     clicked => { Editor.shortcut("close-project"); }
                 }
             }
 
-            Text {
+            // The frame shape, one tap from any other.
+            Rectangle {
                 horizontal-stretch: 1;
-                text: root.project-name;
-                color: Theme.fg;
-                font-size: Theme.fs-xl;
-                font-weight: Theme.weight-title;
-                vertical-alignment: center;
-                overflow: elide;
+
+                shape := Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: shape-row.preferred-width + 24px;
+                    height: 36px;
+                    border-radius: 18px;
+                    background: shape-touch.pressed || root.sheet == "ratio"
+                        ? Theme.field : Colors.transparent;
+
+                    shape-row := HorizontalLayout {
+                        x: 12px;
+                        spacing: 8px;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Icon { glyph: Glyph.frame; size: 18px; tint: Theme.fg; }
+                        }
+                        Text {
+                            text: root.shape-now;
+                            color: Theme.fg;
+                            font-size: Theme.fs-input;
+                            vertical-alignment: center;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Icon { glyph: Glyph.chevron-down; size: 14px; tint: Theme.fg; }
+                        }
+                    }
+
+                    shape-touch := TouchArea {
+                        clicked => { root.open("ratio", "ratio", I18n.t("Frame")); }
+                    }
+                }
             }
 
             VerticalLayout {
@@ -353,15 +419,51 @@ export component PhoneEditor inherits Rectangle {
 
             VerticalLayout {
                 alignment: center;
-                PillButton {
-                    label: I18n.t("Export");
-                    clicked => { Editor.shortcut("export"); }
+                Rectangle {
+                    width: 44px;
+                    height: 36px;
+                    border-radius: Theme.r;
+                    background: save.pressed ? Theme.field-active : Theme.field;
+
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        glyph: Glyph.check;
+                        size: 20px;
+                        tint: Theme.fg;
+                    }
+                    save := TouchArea {
+                        clicked => { Editor.shortcut("save"); }
+                    }
+                }
+            }
+
+            Rectangle { width: 4px; }
+
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 52px;
+                    height: 36px;
+                    border-radius: Theme.r;
+                    background: export.pressed ? Theme.accent-hover : Theme.accent;
+
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        glyph: Glyph.export;
+                        size: 20px;
+                        tint: Theme.on-accent;
+                    }
+                    export := TouchArea {
+                        clicked => { Editor.shortcut("export"); }
+                    }
                 }
             }
         }
     }
 
-    // The monitor.
+    // The monitor, with the full-screen switch in its corner.
     Seat {
         x: 0;
         y: root.bar-h;
@@ -371,6 +473,13 @@ export component PhoneEditor inherits Rectangle {
         phone: true;
     }
 
+    BarButton {
+        x: root.width - self.width - 8px;
+        y: root.bar-h + root.monitor-h - self.height - 8px;
+        glyph: root.full ? Glyph.chevron-down : Glyph.maximize;
+        clicked => { root.full = !root.full; }
+    }
+
     // The transport.
     Rectangle {
         x: 0;
@@ -378,19 +487,64 @@ export component PhoneEditor inherits Rectangle {
         width: root.width;
         height: root.transport-h;
 
-        HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 4px;
-            spacing: 0px;
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: 1px;
+            background: Theme.line;
+        }
 
-            Text {
+        HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 4px;
+
+            HorizontalLayout {
                 horizontal-stretch: 1;
-                text: Fmt.short-duration(Editor.playhead)
-                    + " / " + Fmt.short-duration(Editor.preview-duration);
-                color: Theme.fg-muted;
-                font-family: Theme.font-technical;
-                font-size: Theme.fs-lg;
-                vertical-alignment: center;
+                spacing: 4px;
+                alignment: start;
+
+                Text {
+                    text: root.seconds(Editor.playhead);
+                    color: Theme.fg;
+                    font-family: Theme.font-technical;
+                    font-size: Theme.fs-lg;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "/ " + root.seconds(Editor.preview-duration);
+                    color: Theme.fg-dim;
+                    font-family: Theme.font-technical;
+                    font-size: Theme.fs-lg;
+                    vertical-alignment: center;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.skip-back;
+                    clicked => { Editor.seek(0); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Editor.playing ? Glyph.pause : Glyph.play;
+                    icon-size: 26px;
+                    clicked => { Editor.play-toggled(); }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                BarButton {
+                    glyph: Glyph.skip-forward;
+                    clicked => { Editor.seek(Editor.preview-duration); }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
             }
 
             VerticalLayout {
@@ -407,79 +561,116 @@ export component PhoneEditor inherits Rectangle {
                     clicked => { Editor.shortcut("redo"); }
                 }
             }
+        }
+    }
 
-            VerticalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 52px;
-                    height: 44px;
+    // ── the timeline ─────────────────────────────────────────────────────
+    //
+    // Kept built while a sheet covers it, so the lanes are where they were
+    // left when it closes.
+    Rectangle {
+        x: 0;
+        y: root.lower-y;
+        width: root.width;
+        height: root.timeline-h;
+        visible: !root.full;
+        background: Theme.panel;
+
+        // What can be put on it, one lane's worth each, the way VN offers
+        // them beside the lanes.
+        VerticalLayout {
+            x: 0;
+            y: 0;
+            width: root.adds-w;
+            height: parent.height;
+            alignment: center;
+            spacing: 4px;
+
+            BarButton {
+                glyph: Glyph.music;
+                clicked => { Editor.shortcut("import"); }
+            }
+            BarButton {
+                glyph: Glyph.text-mark;
+                clicked => {
+                    root.library-page = 1;
+                    root.open("library", "text", I18n.t("Text"));
+                }
+            }
+            BarButton {
+                glyph: Glyph.image;
+                clicked => { Editor.shortcut("import"); }
+            }
+            BarButton {
+                glyph: Glyph.film;
+                clicked => {
+                    root.library-page = 0;
+                    root.open("library", "media", I18n.t("Media"));
+                }
+            }
+        }
+
+        Seat {
+            x: root.adds-w;
+            y: 0;
+            width: parent.width - root.adds-w;
+            height: parent.height;
+            kind: PaneKind.timeline;
+            phone: true;
+        }
+    }
+
+    // ── the colour strip ─────────────────────────────────────────────────
+    //
+    // A title's colour, one tap per swatch, applied as it is tapped.
+    if root.is-title && !root.full: Rectangle {
+        x: 0;
+        y: root.lower-y + root.timeline-h;
+        width: root.width;
+        height: root.strip-h;
+        background: Theme.panel;
+
+        Flickable {
+            viewport-width: Math.max(self.width, swatches.preferred-width);
+
+            swatches := HorizontalLayout {
+                height: root.strip-h;
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 10px;
+                alignment: start;
+
+                for swatch in Theme.swatches: VerticalLayout {
+                    alignment: center;
                     Rectangle {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        width: 40px;
-                        height: 40px;
-                        border-radius: 20px;
-                        background: play.pressed ? Theme.accent-hover : Theme.accent;
+                        width: 32px;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: swatch;
+                        border-width: Editor.selected-clip.fill == swatch ? 3px : 1px;
+                        border-color: Editor.selected-clip.fill == swatch
+                            ? Theme.accent : Theme.line-strong;
 
-                        Icon {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            glyph: Editor.playing ? Glyph.pause : Glyph.play;
-                            size: 18px;
-                            tint: Theme.on-accent;
+                        TouchArea {
+                            clicked => {
+                                Editor.clip-set-colour(ClipTextField.color, swatch);
+                                Editor.clip-commit();
+                            }
                         }
                     }
-                    play := TouchArea {
-                        clicked => { Editor.play-toggled(); }
-                    }
-                }
-            }
-
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.minus;
-                    enabled: !root.full;
-                    clicked => { Editor.shortcut("zoom-out"); }
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.plus;
-                    enabled: !root.full;
-                    clicked => { Editor.shortcut("zoom-in"); }
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: root.full ? Glyph.chevron-down : Glyph.maximize;
-                    clicked => { root.full = !root.full; }
                 }
             }
         }
     }
 
-    // The timeline, and the tool row under it. Kept built while a sheet
-    // covers them, so the lanes are where they were left when it closes.
-    Seat {
-        x: 0;
-        y: root.below-y;
-        width: root.width;
-        height: Math.max(0px, root.below-h - root.tools-h);
-        visible: !root.full;
-        kind: PaneKind.timeline;
-        phone: true;
-    }
-
+    // ── the tool row ─────────────────────────────────────────────────────
     Rectangle {
         x: 0;
-        y: root.below-y + Math.max(0px, root.below-h - root.tools-h);
+        y: root.lower-y + root.timeline-h + root.strip-h;
         width: root.width;
         height: root.tools-h;
         visible: !root.full;
-        background: Theme.panel;
+        background: Theme.page;
 
         Rectangle {
             x: 0;
@@ -531,11 +722,17 @@ export component PhoneEditor inherits Rectangle {
     }
 
     // ── the sheet ────────────────────────────────────────────────────────
-    if root.sheet != "" && !root.full: Rectangle {
+    //
+    // Over the lower part of the screen, and at least half of it: the
+    // inspector's panels need the room, and the picture stays in view
+    // above.
+    if root.sheet != "": Rectangle {
+        property <length> tall: Math.max(root.lower-h, root.height * 0.5);
+
         x: 0;
-        y: root.below-y;
+        y: root.height - self.tall;
         width: root.width;
-        height: root.below-h;
+        height: self.tall;
         background: Theme.panel;
         border-top-left-radius: Theme.r-xl;
         border-top-right-radius: Theme.r-xl;
@@ -546,7 +743,7 @@ export component PhoneEditor inherits Rectangle {
 
         VerticalLayout {
             Rectangle {
-                height: 48px;
+                height: 52px;
 
                 Rectangle {
                     x: 0;
@@ -611,32 +808,46 @@ export component PhoneEditor inherits Rectangle {
                 }
 
                 if root.sheet == "ratio": Flickable {
-                    viewport-height: ratios.preferred-height;
+                    viewport-height: shapes.preferred-height;
 
-                    ratios := VerticalLayout {
+                    shapes := VerticalLayout {
                         width: parent.width;
                         padding: 12px;
                         spacing: 8px;
 
-                        for name[index] in root.ratio-names: Rectangle {
-                            height: 48px;
+                        for name[i] in root.shape-names: Rectangle {
+                            property <bool> on: Editor.ratio-index == root.shape-rows[i];
+
+                            height: 56px;
                             border-radius: Theme.r;
-                            background: Editor.ratio-index == index ? Theme.accent-soft : Theme.field;
-                            border-width: Editor.ratio-index == index ? 1px : 0px;
+                            background: self.on ? Theme.accent-soft : Theme.field;
+                            border-width: self.on ? 1px : 0px;
                             border-color: Theme.accent;
 
-                            Text {
-                                x: 16px;
-                                y: 0;
-                                height: parent.height;
-                                text: name;
-                                color: Theme.fg;
-                                font-size: Theme.fs-xl;
-                                vertical-alignment: center;
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+
+                                Text {
+                                    horizontal-stretch: 1;
+                                    text: name;
+                                    color: Theme.fg;
+                                    font-size: Theme.fs-input;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.shape-uses[i];
+                                    color: Theme.fg-muted;
+                                    font-size: Theme.fs;
+                                    vertical-alignment: center;
+                                }
                             }
 
                             TouchArea {
-                                clicked => { Editor.ratio-changed(index); }
+                                clicked => {
+                                    Editor.ratio-changed(root.shape-rows[i]);
+                                    root.close();
+                                }
                             }
                         }
                     }

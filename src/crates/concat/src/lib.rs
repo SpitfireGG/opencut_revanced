@@ -903,7 +903,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         // The rest are the phone layout's buttons, which have no menu of
         // their own and reach the same rows.
         "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
-        | "undo" | "redo" | "add-selected" | "close-project" => {
+        | "undo" | "redo" | "add-selected" | "close-project" | "save" => {
             Shell::with(|_, app| app.invoke_app_menu_selected(action.clone()));
         }
         _ => Shell::with(|shell, app| {
@@ -1364,6 +1364,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
             }
         }
     });
+
+    #[cfg(target_os = "android")]
+    shell.studio.borrow_mut().open_last();
 
     {
         shell.studio.borrow_mut().refresh_art();

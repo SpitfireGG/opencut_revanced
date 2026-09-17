@@ -62,13 +62,19 @@ use crate::presets::{self, TextPreset};
 use crate::ui::*;
 
 /// The monitor's output sizes, matching the picker's rows.
-pub const OUTPUTS: [(i32, i32); 6] = [
+pub const OUTPUTS: [(i32, i32); 10] = [
     (1920, 1080),
     (3840, 2160),
     (1080, 1920),
     (1080, 1080),
     (1440, 1080),
     (2560, 1080),
+    // The phone layout's Instagram shapes: Reels and Stories at 9:16, the
+    // feed's 4:5 and 1:1, each at 4K; and 4:5 at 1080.
+    (2160, 3840),
+    (2160, 2700),
+    (2160, 2160),
+    (1080, 1350),
 ];
 
 /// Shortest clip the editor will make: a sixtieth of a second. Trims and
@@ -156,11 +162,12 @@ const EXPORT_CRF: [u8; 3] = [16, 20, 26];
 const AUDIO_BPS: f32 = 192_000.0;
 
 /// The frame sizes the launch screen offers, and what each label means.
-pub const RESOLUTIONS: [(&str, u32, u32); 4] = [
+pub const RESOLUTIONS: [(&str, u32, u32); 5] = [
     ("1080p", 1920, 1080),
     ("720p", 1280, 720),
     ("4K", 3840, 2160),
     ("Vertical", 1080, 1920),
+    ("Vertical 4K", 2160, 3840),
 ];
 
 /// The frame rates, as exact fractions. 29.97 is 30000/1001 and never
@@ -288,7 +295,8 @@ impl Default for ExportState {
             open: false,
             name: "Untitled".into(),
             folder: home_folder("Movies"),
-            resolution: 2,
+            // A phone exports for Instagram: the full 4K short side.
+            resolution: if cfg!(target_os = "android") { 0 } else { 2 },
             rate: 1,
             quality: 1,
             codec: 0,
@@ -380,7 +388,8 @@ impl Default for StartState {
             } else {
                 "Desktop/Concat"
             }),
-            resolution: 0,
+            // A phone starts a Reel: 9:16 at 4K, 30 fps.
+            resolution: if cfg!(target_os = "android") { 4 } else { 0 },
             rate: 3,
             busy: false,
             error: String::new(),
@@ -5137,6 +5146,26 @@ impl Studio {
         match projects::create(&self.start.location, &name, width, height, num, den) {
             Ok(info) => self.open_project(info),
             Err(error) => self.start.error = error,
+        }
+    }
+
+    /// A phone skips the launch screen: it reopens the project used last,
+    /// or makes one with the defaults when there is none.
+    pub fn open_last(&mut self) {
+        if let Some(last) = self.recents.iter().max_by_key(|info| info.opened_at) {
+            let path = last.path.clone();
+            self.open_recent(&path);
+        }
+        if self.on_start {
+            let base = self.start.name.clone();
+            for n in 1..100 {
+                self.start.error.clear();
+                self.start.name = if n == 1 { base.clone() } else { format!("{base} {n}") };
+                self.create_project();
+                if !self.on_start || !self.start.error.contains("already exists") {
+                    break;
+                }
+            }
         }
     }
 
