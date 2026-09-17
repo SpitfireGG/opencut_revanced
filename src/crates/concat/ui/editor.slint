@@ -60,6 +60,9 @@ export global Editor {
     /// Phone: which end of the selected clip had its handle tapped, for
     /// the "run it out to the media's end" chip; -1 for none.
     in-out property <int> edge-chip: -1;
+    /// Phone: the clip whose quick-action bar was put away by a tap
+    /// elsewhere; the bar comes back when a clip is tapped again.
+    in-out property <string> tip-closed-for;
 
     // ── highlights ──
     /// The last search's finds, best first.
@@ -229,6 +232,10 @@ export global Editor {
     /// for a move, steps for a scale, fifteen degrees for a turn.
     callback stage-dragged(x: float, y: float, snap: bool);
     callback stage-released();
+    /// Two fingers on the monitor scale the selected picture; `factor` is
+    /// the spread against where they landed.
+    callback stage-pinch-started();
+    callback stage-pinched(factor: float);
 
     /// A custom cutout's brush, as the inspector set it: which of the four
     /// tools, how wide as a fraction of the picture, and whether a press on

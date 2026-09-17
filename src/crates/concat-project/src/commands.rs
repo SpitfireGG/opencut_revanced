@@ -1217,14 +1217,29 @@ pub fn apply(
             edge,
             delta,
         } => {
+            // How long the file under a video or a sound runs: a tail cannot
+            // be pulled past its last frame. A still, a title or a layer has
+            // no end of its own.
+            let source_length = project.active().clip(&clip_id).and_then(|clip| {
+                matches!(clip.kind, ClipKind::Video | ClipKind::Audio)
+                    .then(|| project.media_by_id(&clip.media_id))
+                    .flatten()
+                    .and_then(|media| media.duration)
+            });
             let timeline = project.active_mut();
             let Some(clip) = timeline.clip_mut(&clip_id) else {
                 return Ok(Outcome::default());
             };
             let applied = match edge {
                 TrimEdge::End => {
-                    let duration = (clip.duration + delta).max(MIN_CLIP_DURATION);
-                    assign(&mut clip.duration, duration)
+                    let mut duration = clip.duration + delta;
+                    if let Some(length) = source_length {
+                        let room = (length - clip.source_start) / clip.speed.max(1e-6);
+                        // Never shorter than it already is: a clip that
+                        // already overruns its file is not cut by a grow.
+                        duration = duration.min(room.max(clip.duration));
+                    }
+                    assign(&mut clip.duration, duration.max(MIN_CLIP_DURATION))
                 }
                 TrimEdge::Start => {
                     // Dragging the head moves the in-point too, so the pixels

@@ -847,6 +847,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
     editor.on_stage_released(on_window!(|state| {
         state.stage_released();
     }));
+    editor.on_stage_pinch_started(on_window!(|state| {
+        state.stage_pinch_started();
+    }));
+    editor.on_stage_pinched(on_window!(|state, factor: f32| {
+        state.stage_pinched(factor);
+    }));
 
     // ── the cutout ──
     editor.on_cutout_mode(on_window!(|state, mode: i32| {

@@ -1232,6 +1232,24 @@ mod tests {
     }
 
     #[test]
+    fn a_tail_trim_stops_at_the_end_of_the_file() {
+        // Ten seconds of footage, cut to six, then pulled far out: it
+        // stops at ten, where the file ends.
+        let (mut editor, _, clip_id) = fixture();
+        for delta in [-4.0, 1000.0] {
+            editor
+                .apply(Command::TrimClip {
+                    clip_id: clip_id.clone(),
+                    edge: TrimEdge::End,
+                    delta,
+                })
+                .expect("trims");
+        }
+        let clip = editor.project().active().clip(&clip_id).expect("exists");
+        assert_eq!(clip.duration, 10.0);
+    }
+
+    #[test]
     fn a_tail_trim_stretches_only_the_duration_and_stops_at_the_minimum() {
         let (mut editor, _, clip_id) = fixture();
         editor

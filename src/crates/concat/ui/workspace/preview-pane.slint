@@ -479,7 +479,7 @@ component Guide inherits Rectangle {
             : root.guide.at * root.height - 0.5px;
         width: root.guide.vertical ? 1px : root.dash;
         height: root.guide.vertical ? root.dash : 1px;
-        background: Theme.accent;
+        background: Theme.touch ? #ffffff : Theme.accent;
     }
 }
 
@@ -528,15 +528,16 @@ component StageOverlay inherits Rectangle {
     /// Draw Instagram's Reels interface over a portrait frame, and mark
     /// where a selected picture runs under it or over another picture.
     in property <bool> safe-zones;
-    // Meta's Reels safe zone, on a 1080x1920 frame: 270px clear at the top,
-    // 672px at the bottom, 64px each side, and the button rail 227px in
-    // from the right from 1150px down. Studio::SAFE_ZONE_XS/YS snap to the
-    // same lines.
+    // The Reels safe zone, on a 1080x1920 frame: 270px clear at the top,
+    // 64px each side, and the button rail 227px in from the right from
+    // 1150px down (Meta's spec); the profile and caption block is the
+    // bottom 13% - Meta allows 35%, which covers far more than the block
+    // really does. Studio::SAFE_ZONE_XS/YS snap to the same lines.
     property <[SafeZone]> zones: [
         { x0: 0, y0: 0, x1: 1, y1: 0.1406, label: I18n.t("Top bar") },
-        { x0: 0, y0: 0.65, x1: 0.7898, y1: 1, label: I18n.t("Profile & caption") },
+        { x0: 0, y0: 0.87, x1: 0.7898, y1: 1, label: I18n.t("Profile & caption") },
         { x0: 0.7898, y0: 0.599, x1: 1, y1: 1, label: I18n.t("Buttons") },
-        { x0: 0, y0: 0.1406, x1: 0.0593, y1: 0.65, label: "" },
+        { x0: 0, y0: 0.1406, x1: 0.0593, y1: 0.87, label: "" },
         { x0: 0.9407, y0: 0.1406, x1: 1, y1: 0.599, label: "" },
     ];
     in property <[StageGuideData]> guides;
@@ -550,6 +551,9 @@ component StageOverlay inherits Rectangle {
     callback grip-pressed(id: string, grip: int, x: float, y: float);
     callback dragged(x: float, y: float, snap: bool);
     callback released();
+    /// Two fingers: the selected picture grows and shrinks with them.
+    callback pinch-started();
+    callback pinched(factor: float);
     /// A ctrl drag or a middle drag over the stage moves the view, not a
     /// picture. The points are in the parent's frame - `x` plus `mouse-x` -
     /// because this overlay is what the drag moves, and a delta measured
@@ -560,6 +564,15 @@ component StageOverlay inherits Rectangle {
     callback pan-released();
 
     background: transparent;
+
+    // Two fingers on a phone scale the selected picture or title. Ancestor
+    // of the floor, which a pinch cancels.
+    pinch := ScaleRotateGestureHandler {
+        enabled: Theme.touch;
+        started => { root.pinch-started(); }
+        updated => { root.pinched(self.scale); }
+        ended => { root.released(); }
+        cancelled => { root.released(); }
 
     // The floor. Every press that no grip took lands here; Rust hit-tests
     // it against the pictures, rotation and stacking included.
@@ -605,6 +618,7 @@ component StageOverlay inherits Rectangle {
                 root.pan-dragged(root.x + self.mouse-x, root.y + self.mouse-y);
             }
         }
+    }
     }
 
     // The snap lines, under the boxes: a guide runs the whole frame and the
@@ -669,7 +683,7 @@ component StageOverlay inherits Rectangle {
                 item: entry;
                 frame-w: root.width;
                 frame-h: root.height;
-                ink: Theme.accent;
+                ink: Theme.touch ? #ffffff : Theme.accent;
                 visible: entry.selected && !other.selected && self.l < self.r && self.t < self.b;
             }
         }
@@ -699,7 +713,9 @@ component StageOverlay inherits Rectangle {
         // On a phone, the picture that fills the frame wears no box: its
         // edges are the frame's, and a box there is only a green border
         // round the whole monitor. Overlays keep theirs.
-        if entry.selected && !(Theme.touch && entry.w >= 0.98 && entry.h >= 0.98): StageItem {
+        // A phone draws no box at all: a finger drags the picture and two
+        // pinch it, and an outline over the Reel is only in the way.
+        if entry.selected && !Theme.touch: StageItem {
             x: 0;
             y: 0;
             width: parent.width;
@@ -768,6 +784,8 @@ export component PreviewPane inherits Rectangle {
     callback stage-grip-pressed(id: string, grip: int, x: float, y: float);
     callback stage-dragged(x: float, y: float, snap: bool);
     callback stage-released();
+    callback stage-pinch-started();
+    callback stage-pinched(factor: float);
 
     /// The corner button: show something else in this pane's seat.
     callback pane-picked(kind: PaneKind);
@@ -1044,6 +1062,8 @@ export component PreviewPane inherits Rectangle {
                 grip-pressed(id, grip, x, y) => { root.stage-grip-pressed(id, grip, x, y); }
                 dragged(x, y, snap) => { root.stage-dragged(x, y, snap); }
                 released => { root.stage-released(); }
+                pinch-started => { root.stage-pinch-started(); }
+                pinched(factor) => { root.stage-pinched(factor); }
                 pan-pressed(x, y) => { viewport.grab(x, y); }
                 pan-dragged(x, y) => { viewport.drag-to(x, y); }
                 pan-released => { }

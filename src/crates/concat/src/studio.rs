@@ -82,7 +82,7 @@ pub const OUTPUTS: [(i32, i32); 10] = [
 /// margin, the top of the button rail and the top of the bottom block. The
 /// monitor draws the same zones; see StageOverlay in preview-pane.slint.
 const SAFE_ZONE_XS: [f64; 3] = [0.0593, 0.7898, 0.9407];
-const SAFE_ZONE_YS: [f64; 3] = [0.1406, 0.599, 0.65];
+const SAFE_ZONE_YS: [f64; 3] = [0.1406, 0.599, 0.87];
 
 /// A moment worth a Reel, found in a clip's sound; see `find_highlights`.
 pub struct Highlight {
@@ -1594,21 +1594,58 @@ impl Studio {
     /// the model stores lanes bottom-most first - the compositing order - so
     /// this is the one place the two orders meet.
     pub fn row_track(&self, row: i32) -> Option<&Track> {
-        let tracks = &self.timeline().tracks;
-        let count = tracks.len() as i32;
-        if row < 0 || row >= count {
-            return None;
-        }
-        tracks.get((count - 1 - row) as usize)
+        let order = self.row_order();
+        let index = *order.get(usize::try_from(row).ok()?)?;
+        self.timeline().tracks.get(index)
     }
 
     pub fn row_of(&self, track_id: &str) -> i32 {
         let tracks = &self.timeline().tracks;
-        tracks
+        let Some(index) = tracks.iter().position(|track| track.id == track_id) else {
+            return 0;
+        };
+        self.row_order()
+            .iter()
+            .position(|held| *held == index)
+            .map_or(0, |row| row as i32)
+    }
+
+    /// Where a lane sits in the compositing stack: 0 is the bottom.
+    fn layer_of(&self, track_id: &str) -> usize {
+        self.timeline()
+            .tracks
             .iter()
             .position(|track| track.id == track_id)
-            .map(|index| tracks.len() as i32 - 1 - index as i32)
             .unwrap_or(0)
+    }
+
+    /// The lanes' indices in the model, top row first. A desktop shows the
+    /// compositing stack, highest layer on top. A phone groups them the way
+    /// VN reads: the footage first, then the words, then what is laid over
+    /// it, then the sound, then whatever is empty - the stack order kept
+    /// within each group.
+    fn row_order(&self) -> Vec<usize> {
+        let timeline = self.timeline();
+        let mut order: Vec<usize> = (0..timeline.tracks.len()).rev().collect();
+        if self.compact {
+            let group = |index: &usize| {
+                let lane = &timeline.tracks[*index].id;
+                timeline
+                    .clips
+                    .iter()
+                    .filter(|clip| &clip.track_id == lane)
+                    .map(|clip| match clip.kind {
+                        model::ClipKind::Video => 0,
+                        model::ClipKind::Text => 1,
+                        model::ClipKind::Image | model::ClipKind::Layer => 2,
+                        model::ClipKind::Audio => 3,
+                    })
+                    .min()
+                    .unwrap_or(4)
+            };
+            order.sort_by_key(group);
+        }
+        order
     }
 
     pub fn locked(&self, track_id: &str) -> bool {
@@ -1650,11 +1687,10 @@ impl Studio {
 
     /// Every lane's height, top-most first.
     pub fn lane_heights(&self) -> Vec<f32> {
-        self.timeline()
-            .tracks
-            .iter()
-            .rev()
-            .map(|lane| self.lane_height(lane))
+        let tracks = &self.timeline().tracks;
+        self.row_order()
+            .into_iter()
+            .map(|index| self.lane_height(&tracks[index]))
             .collect()
     }
 
@@ -2165,7 +2201,8 @@ impl Studio {
     /// last clip and something placed at the playhead there.
     pub fn seek(&mut self, seconds: f32) {
         self.playhead = seconds.max(0.0);
-        if self.prefs.playhead_stops_at_end {
+        // A phone's timeline is exactly as long as the edit.
+        if self.prefs.playhead_stops_at_end || self.compact {
             self.playhead = self.playhead.min(self.duration().max(0.0));
         }
         self.host.playback.seek(f64::from(self.playhead));
@@ -3339,7 +3376,10 @@ impl Studio {
                     }
                 } else {
                     let wanted = self.snapped(start + duration + seconds, threshold, &id);
-                    let at = wanted.max(start + MIN_DURATION);
+                    let mut at = wanted.max(start + MIN_DURATION);
+                    if let Some(limit) = self.tail_limit(&id, start, source_start, speed) {
+                        at = at.min(limit.max(start + duration));
+                    }
                     if let Some(clip) = self.echo_clip_mut(&id) {
                         clip.duration = f64::from(at - start);
                     }
@@ -3356,6 +3396,68 @@ impl Studio {
             | Gesture::Paint { .. } => {}
         }
         self.gesture = gesture;
+    }
+
+    /// Where the footage on the timeline ends: the last frame of any video
+    /// but `except`. None when there is no video.
+    fn footage_end(&self, except: &str) -> Option<f64> {
+        self.timeline()
+            .clips
+            .iter()
+            .filter(|clip| clip.kind == model::ClipKind::Video && clip.id != except)
+            .map(|clip| clip.start + clip.duration)
+            .reduce(f64::max)
+    }
+
+    /// How far a clip's tail may be pulled, in timeline seconds: a video or
+    /// a sound to the end of its file; on a phone, anything else to the end
+    /// of the footage, so the timeline is as long as the video.
+    fn tail_limit(&self, id: &str, start: f32, source_start: f32, speed: f32) -> Option<f32> {
+        let clip = self.clip(id)?;
+        if matches!(clip.kind, model::ClipKind::Video | model::ClipKind::Audio) {
+            let length = self.project().media_by_id(&clip.media_id)?.duration? as f32;
+            return Some(start + (length - source_start) / speed.max(0.01));
+        }
+        if self.compact {
+            return self.footage_end(id).map(|end| end as f32);
+        }
+        None
+    }
+
+    /// Two fingers went down on the monitor: the selected picture or title
+    /// is scaled by the pinch until they lift.
+    pub fn stage_pinch_started(&mut self) {
+        let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id).cloned()) else {
+            return;
+        };
+        if !(clip.kind.is_visual() || clip.kind == model::ClipKind::Text)
+            || self.locked(&clip.track_id)
+        {
+            return;
+        }
+        // Whatever the first finger began is settled first.
+        self.stage_released();
+        self.flush_commit();
+        self.begin_echo();
+        self.gesture = Gesture::StageScale {
+            clip: clip.id.clone(),
+            scale: clip.scale,
+            centre: (0.0, 0.0),
+            from: 1.0,
+            half: (0.0, 0.0),
+        };
+    }
+
+    /// The pinch's spread, against where it began.
+    pub fn stage_pinched(&mut self, factor: f32) {
+        let Gesture::StageScale { clip, scale, .. } = &self.gesture else {
+            return;
+        };
+        let (id, next) = (clip.clone(), (scale * f64::from(factor)).clamp(0.05, 8.0));
+        if let Some(clip) = self.echo_clip_mut(&id) {
+            clip.scale = next;
+        }
+        self.request_preview();
     }
 
     /// The pointer let go: the whole gesture becomes one command.
@@ -3951,8 +4053,8 @@ impl Studio {
                     && playhead < clip.start + clip.duration
             })
             .collect();
-        // Rows count from the top; the bottom of the stack is the highest.
-        clips.sort_by_key(|clip| std::cmp::Reverse(self.row_of(&clip.track_id)));
+        // Bottom of the stack first, as the compositor paints them.
+        clips.sort_by_key(|clip| self.layer_of(&clip.track_id));
         clips
     }
 
@@ -6283,10 +6385,9 @@ impl Studio {
         let mut top = 0.0;
         sync(
             &models.tracks,
-            timeline
-                .tracks
-                .iter()
-                .rev()
+            self.row_order()
+                .into_iter()
+                .map(|index| &timeline.tracks[index])
                 .map(|lane| {
                     let height = self.lane_height(lane);
                     let row = TrackData {
@@ -6350,7 +6451,7 @@ impl Studio {
                     && clip.start <= playhead
                     && playhead < clip.start + clip.duration
             })
-            .max_by_key(|clip| -self.row_of(&clip.track_id));
+            .max_by_key(|clip| self.layer_of(&clip.track_id));
         editor.set_has_picture(showing.is_some());
         editor.set_preview_clip_name(
             showing
@@ -7978,14 +8079,18 @@ impl Studio {
         let delta = if head {
             -clip.source_start / rate
         } else {
-            let Some(length) = self
-                .project()
-                .media_by_id(&clip.media_id)
-                .and_then(|media| media.duration)
-            else {
-                return;
-            };
-            (length - clip.source_start) / rate - clip.duration
+            let length = matches!(clip.kind, model::ClipKind::Video | model::ClipKind::Audio)
+                .then(|| self.project().media_by_id(&clip.media_id))
+                .flatten()
+                .and_then(|media| media.duration);
+            match length {
+                Some(length) => (length - clip.source_start) / rate - clip.duration,
+                // A still or a title runs on to the end of the footage.
+                None => match self.footage_end(&clip.id) {
+                    Some(end) => end - clip.start - clip.duration,
+                    None => return,
+                },
+            }
         };
         if delta.abs() < 1e-3 {
             return;

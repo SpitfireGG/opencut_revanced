@@ -37,6 +37,12 @@ export component Seat inherits Rectangle {
     in-out property <int> library-page;
     /// The one inspector section to show; see ConfigPane.only-section.
     in property <string> only-section;
+    /// A tap away from the phone's quick-action bar puts it away.
+    function tip-off() {
+        Editor.tip-closed-for = Editor.selected-clip.id;
+        Editor.edge-chip = -1;
+    }
+
     /// The monitor's Reels safe zones; see StageOverlay.
     in property <bool> safe-zones;
     /// The monitor as the Reels tab shows it; see PreviewPane.reel.
@@ -190,6 +196,7 @@ export component Seat inherits Rectangle {
             stage-pressed(x, y, additive) => {
                 Editor.blur();
                 Editor.stage-pressed(x, y, additive);
+                root.tip-off();
             }
             stage-grip-pressed(id, grip, x, y) => {
                 Editor.blur();
@@ -197,6 +204,8 @@ export component Seat inherits Rectangle {
             }
             stage-dragged(x, y, snap) => { Editor.stage-dragged(x, y, snap); }
             stage-released => { Editor.stage-released(); }
+            stage-pinch-started => { Editor.stage-pinch-started(); }
+            stage-pinched(factor) => { Editor.stage-pinched(factor); }
         }
 
     if root.kind == PaneKind.inspector: ConfigPane {
@@ -346,15 +355,21 @@ export component Seat inherits Rectangle {
             add-track => { Editor.add-track(); }
             zoom-to-fit(width) => { Editor.zoom-to-fit(width); }
             zoom(factor, anchor) => { Editor.zoom(factor, anchor); }
-            floor-pressed => { Editor.blur(); }
+            floor-pressed => {
+                Editor.blur();
+                root.tip-off();
+            }
             clip-edge-tapped(id, edge) => { Editor.edge-chip = edge; }
             scrubbed(seconds) => {
                 Editor.blur();
                 Editor.scrubbed(seconds);
+                root.tip-off();
             }
             clip-pressed(id, additive, edge) => {
                 Editor.blur();
                 Editor.clip-pressed(id, additive, edge);
+                Editor.tip-closed-for = "";
+                Editor.edge-chip = -1;
             }
             clip-dragged(seconds, pixels) => { Editor.clip-dragged(seconds, pixels); }
             clip-released => { Editor.clip-released(); }

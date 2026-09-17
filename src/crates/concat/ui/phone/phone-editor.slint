@@ -541,20 +541,36 @@ export component PhoneEditor inherits Rectangle {
 
     // ── the arrangement ──────────────────────────────────────────────────
     property <length> bar-h: 56px;
-    property <length> transport-h: 44px;
+    /// The scrub bar over the play controls.
+    property <length> scrub-h: 18px;
+    property <length> transport-h: root.scrub-h + 44px;
+    /// The handle between the controls and the timeline.
+    property <length> grip-h: 18px;
     property <length> tools-h: 58px;
     property <length> strip-h: root.is-title ? 48px : 0px;
-    /// The timeline's share of the screen, dragged by the grip over it.
+    /// The timeline's share of the screen, dragged by its handle.
     property <float> timeline-share: 0.24;
-    /// Never so little the lanes are unusable, never so much the picture
-    /// disappears.
-    property <length> timeline-h: Math.max(110px,
-        Math.min(root.height * 0.5, root.height * root.timeline-share));
+    /// However far it is dragged, the picture keeps 140px and the tool row
+    /// stays on the screen.
+    property <length> timeline-room: root.height - root.bar-h - root.transport-h
+        - root.grip-h - root.strip-h - root.tools-h - 140px;
+    property <length> timeline-h: Math.max(96px,
+        Math.min(root.timeline-room, root.height * root.timeline-share));
     property <length> lower-h: root.full ? 0px
-        : root.timeline-h + root.strip-h + root.tools-h;
+        : root.grip-h + root.timeline-h + root.strip-h + root.tools-h;
     property <length> monitor-h: Math.max(80px,
         root.height - root.bar-h - root.transport-h - root.lower-h);
-    property <length> lower-y: root.bar-h + root.monitor-h + root.transport-h;
+    /// Where the lanes begin.
+    property <length> lower-y: root.bar-h + root.monitor-h + root.transport-h + root.grip-h;
+
+    /// The quick-action bar is up: a clip is selected and no tap elsewhere
+    /// has put the bar away since.
+    property <bool> tip-open: root.has-clip && root.sheet == "" && !root.full
+        && Editor.selected-clip.id != Editor.tip-closed-for;
+    function tip-off() {
+        Editor.tip-closed-for = Editor.selected-clip.id;
+        Editor.edge-chip = -1;
+    }
     /// The column of add buttons beside the lanes.
     property <length> adds-w: 56px;
 
@@ -726,7 +742,70 @@ export component PhoneEditor inherits Rectangle {
             background: Theme.line;
         }
 
+        // The scrub bar: the whole edit, end to end, and where the playhead
+        // is in it. Tap or drag anywhere along it.
+        scrubber := Rectangle {
+            x: 16px;
+            y: 0;
+            width: parent.width - 32px;
+            height: root.scrub-h;
+
+            property <float> done: Math.min(1, Math.max(0,
+                Editor.playhead / Math.max(0.01, Editor.preview-duration)));
+
+            Rectangle {
+                x: 0;
+                y: (parent.height - self.height) / 2 + 2px;
+                width: parent.width;
+                height: seek.pressed ? 5px : 3px;
+                border-radius: self.height / 2;
+                background: Theme.field-active;
+
+                Rectangle {
+                    x: 0;
+                    y: 0;
+                    width: parent.width * scrubber.done;
+                    height: parent.height;
+                    border-radius: parent.border-radius;
+                    background: Theme.accent;
+                }
+
+                animate height { duration: 120ms; easing: ease-out; }
+            }
+
+            Rectangle {
+                x: parent.width * parent.done - self.width / 2;
+                y: (parent.height - self.height) / 2 + 2px;
+                width: seek.pressed ? 14px : 10px;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: #ffffff;
+                drop-shadow-blur: 3px;
+                drop-shadow-color: #00000066;
+
+                animate width { duration: 120ms; easing: ease-out; }
+            }
+
+            seek := TouchArea {
+                y: -4px;
+                height: parent.height + 8px;
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down) {
+                        root.tip-off();
+                        Editor.scrubbed(Math.max(0, Math.min(1, self.mouse-x / self.width))
+                            * Editor.preview-duration);
+                    }
+                }
+                moved => {
+                    Editor.scrubbed(Math.max(0, Math.min(1, self.mouse-x / self.width))
+                        * Editor.preview-duration);
+                }
+            }
+        }
+
         HorizontalLayout {
+            y: root.scrub-h;
+            height: parent.height - root.scrub-h;
             padding-left: 14px;
             padding-right: 4px;
 
@@ -755,7 +834,10 @@ export component PhoneEditor inherits Rectangle {
                 alignment: center;
                 BarButton {
                     glyph: Glyph.skip-back;
-                    clicked => { Editor.seek(0); }
+                    clicked => {
+                        root.tip-off();
+                        Editor.seek(0);
+                    }
                 }
             }
             VerticalLayout {
@@ -763,14 +845,20 @@ export component PhoneEditor inherits Rectangle {
                 BarButton {
                     glyph: Editor.playing ? Glyph.pause : Glyph.play;
                     icon-size: 26px;
-                    clicked => { Editor.play-toggled(); }
+                    clicked => {
+                        root.tip-off();
+                        Editor.play-toggled();
+                    }
                 }
             }
             VerticalLayout {
                 alignment: center;
                 BarButton {
                     glyph: Glyph.skip-forward;
-                    clicked => { Editor.seek(Editor.preview-duration); }
+                    clicked => {
+                        root.tip-off();
+                        Editor.seek(Editor.preview-duration);
+                    }
                 }
             }
 
@@ -782,14 +870,20 @@ export component PhoneEditor inherits Rectangle {
                 alignment: center;
                 BarButton {
                     glyph: Glyph.undo;
-                    clicked => { Editor.shortcut("undo"); }
+                    clicked => {
+                        root.tip-off();
+                        Editor.shortcut("undo");
+                    }
                 }
             }
             VerticalLayout {
                 alignment: center;
                 BarButton {
                     glyph: Glyph.redo;
-                    clicked => { Editor.shortcut("redo"); }
+                    clicked => {
+                        root.tip-off();
+                        Editor.shortcut("redo");
+                    }
                 }
             }
         }
@@ -809,32 +903,43 @@ export component PhoneEditor inherits Rectangle {
 
         // What can be put on it, one lane's worth each, the way VN offers
         // them beside the lanes.
-        VerticalLayout {
+        //
+        // In the lanes' order - footage, words, overlays, sound - from the
+        // top, under the ruler; they scroll when the timeline is short.
+        Flickable {
             x: 0;
-            y: 0;
+            y: 22px;
             width: root.adds-w;
-            height: parent.height;
-            alignment: center;
-            spacing: 4px;
+            height: parent.height - 22px;
+            viewport-height: adds.preferred-height;
 
-            BarButton {
-                glyph: Glyph.music;
-                clicked => { Editor.shortcut("import-place"); }
-            }
-            BarButton {
-                glyph: Glyph.text-mark;
-                clicked => {
-                    root.library-page = 1;
-                    root.open("library", "text", I18n.t("Text"));
+            adds := VerticalLayout {
+                width: parent.width;
+                padding-top: 4px;
+                spacing: 2px;
+                alignment: start;
+
+                for add in [
+                    { id: "film", glyph: Glyph.film },
+                    { id: "text", glyph: Glyph.text-mark },
+                    { id: "image", glyph: Glyph.image },
+                    { id: "music", glyph: Glyph.music },
+                ]: HorizontalLayout {
+                    alignment: center;
+                    BarButton {
+                        width: 40px;
+                        height: 40px;
+                        glyph: add.glyph;
+                        clicked => {
+                            if (add.id == "text") {
+                                root.library-page = 1;
+                                root.open("library", "text", I18n.t("Text"));
+                            } else {
+                                Editor.shortcut("import-place");
+                            }
+                        }
+                    }
                 }
-            }
-            BarButton {
-                glyph: Glyph.image;
-                clicked => { Editor.shortcut("import-place"); }
-            }
-            BarButton {
-                glyph: Glyph.film;
-                clicked => { Editor.shortcut("import-place"); }
             }
         }
 
@@ -847,38 +952,55 @@ export component PhoneEditor inherits Rectangle {
             phone: true;
         }
 
-        // The grip: drag the timeline's top edge to give it more or less of
-        // the screen.
+    }
+
+    // ── the handle ───────────────────────────────────────────────────────
+    //
+    // Between the controls and the lanes. Only a drag up or down does
+    // anything: it gives the timeline more or less of the screen.
+    if !root.full: Rectangle {
+        x: 0;
+        y: root.lower-y - root.grip-h;
+        width: root.width;
+        height: root.grip-h;
+        background: Theme.panel;
+
         Rectangle {
             x: 0;
             y: 0;
             width: parent.width;
-            height: 14px;
+            height: 1px;
+            background: Theme.line;
+        }
 
-            Rectangle {
-                x: (parent.width - self.width) / 2;
-                y: 4px;
-                width: 36px;
-                height: 4px;
-                border-radius: 2px;
-                background: grip.pressed ? Theme.accent : Theme.line-strong;
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: grip.pressed ? 56px : 40px;
+            height: 5px;
+            border-radius: 2.5px;
+            background: grip.pressed ? Theme.fg : Theme.fg-dim;
+
+            animate width, background { duration: 140ms; easing: ease-out; }
+        }
+
+        // The handle moves as it is dragged, so the finger is measured on
+        // the screen, not against the handle.
+        grip := TouchArea {
+            y: -8px;
+            height: parent.height + 16px;
+            mouse-cursor: MouseCursor.ns-resize;
+            property <float> from-share;
+            property <length> from-y;
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.down) {
+                    self.from-share = root.timeline-share;
+                    self.from-y = self.absolute-position.y + self.mouse-y;
+                }
             }
-
-            // The grip moves as it is dragged, so the finger is measured
-            // on the screen, not against the grip.
-            grip := TouchArea {
-                property <float> from-share;
-                property <length> from-y;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        self.from-share = root.timeline-share;
-                        self.from-y = self.absolute-position.y + self.mouse-y;
-                    }
-                }
-                moved => {
-                    root.timeline-share = Math.max(0.14, Math.min(0.5, self.from-share
-                        - (self.absolute-position.y + self.mouse-y - self.from-y) / root.height));
-                }
+            moved => {
+                root.timeline-share = Math.max(0.12, Math.min(root.timeline-room / root.height, self.from-share
+                    - (self.absolute-position.y + self.mouse-y - self.from-y) / root.height));
             }
         }
     }
@@ -912,7 +1034,7 @@ export component PhoneEditor inherits Rectangle {
                         background: swatch;
                         border-width: Editor.selected-clip.fill == swatch ? 3px : 1px;
                         border-color: Editor.selected-clip.fill == swatch
-                            ? Theme.accent : Theme.line-strong;
+                            ? #ffffff : Theme.line-strong;
 
                         TouchArea {
                             clicked => {
@@ -996,7 +1118,7 @@ export component PhoneEditor inherits Rectangle {
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
 
-    if root.has-clip && root.sheet == "" && !root.full: Rectangle {
+    if root.tip-open: Rectangle {
         x: (root.width - self.width) / 2;
         y: root.lower-y + 26px;
         width: quick.preferred-width;
@@ -1052,15 +1174,16 @@ export component PhoneEditor inherits Rectangle {
     }
 
     // A tapped handle's offer: run that end of the clip out to its media's.
-    if root.has-clip && Editor.edge-chip >= 0 && root.sheet == "" && !root.full: Rectangle {
+    if root.tip-open && Editor.edge-chip >= 0: Rectangle {
         x: (root.width - self.width) / 2;
         y: root.lower-y + 26px + 56px + 8px;
         width: chip.preferred-width;
         height: 40px;
         border-radius: 20px;
         background: Theme.raised;
-        border-width: 1px;
-        border-color: Theme.accent;
+        drop-shadow-blur: 10px;
+        drop-shadow-offset-y: 2px;
+        drop-shadow-color: #00000066;
 
         chip := HorizontalLayout {
             padding-left: 14px;
@@ -1215,8 +1338,6 @@ export component PhoneEditor inherits Rectangle {
                                 border-radius: Theme.r;
                                 background: root.highlight-length == seconds
                                     ? Theme.accent-soft : Theme.field;
-                                border-width: root.highlight-length == seconds ? 1px : 0px;
-                                border-color: Theme.accent;
 
                                 Text {
                                     width: 100%;
@@ -1304,8 +1425,6 @@ export component PhoneEditor inherits Rectangle {
                             height: 56px;
                             border-radius: Theme.r;
                             background: self.on ? Theme.accent-soft : Theme.field;
-                            border-width: self.on ? 1px : 0px;
-                            border-color: Theme.accent;
 
                             HorizontalLayout {
                                 padding-left: 16px;

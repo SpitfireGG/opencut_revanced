@@ -464,14 +464,14 @@ component Clip inherits Rectangle {
             y: 0;
             width: parent.width;
             height: 2px;
-            background: Theme.accent;
+            background: #ffffff;
         }
         Rectangle {
             x: 0;
             y: parent.height - 2px;
             width: parent.width;
             height: 2px;
-            background: Theme.accent;
+            background: #ffffff;
         }
 
         for side in 2: Rectangle {
@@ -483,7 +483,7 @@ component Clip inherits Rectangle {
             border-bottom-left-radius: side == 0 ? Theme.r-sm : 0px;
             border-top-right-radius: side == 1 ? Theme.r-sm : 0px;
             border-bottom-right-radius: side == 1 ? Theme.r-sm : 0px;
-            background: Theme.accent;
+            background: #ffffff;
 
             Icon {
                 x: (parent.width - self.width) / 2;
@@ -491,7 +491,7 @@ component Clip inherits Rectangle {
                 glyph: side == 0 ? Glyph.chevron-left : Glyph.chevron-right;
                 size: 14px;
                 weight: 2.6;
-                tint: Theme.on-accent;
+                tint: #111111;
             }
         }
     }
@@ -519,6 +519,19 @@ component Clip inherits Rectangle {
     // local delta is measured against its own moving origin and cancels
     // itself out; the drag stalls after the first frame. Same reasoning, and
     // the same fix, as the workspace splitters.
+    /// The tab a phone press began on, and whether it has been held.
+    property <int> down-edge: -1;
+    property <bool> held;
+    property <bool> holding;
+    Timer {
+        interval: 300ms;
+        running: root.holding;
+        triggered => {
+            root.held = true;
+            root.holding = false;
+        }
+    }
+
     touch := TouchArea {
         enabled: !root.locked;
         mouse-cursor: root.tool == TimelineTool.razor ? MouseCursor.crosshair
@@ -532,15 +545,22 @@ component Clip inherits Rectangle {
                     self.origin-y = self.absolute-position.y + self.mouse-y;
                     self.travelled = false;
                     self.moving = root.item.selected;
+                    root.down-edge = root.edge-at;
+                    root.held = false;
+                    root.holding = true;
                     if (self.moving) {
                         root.pressed(false, root.edge-at);
                     } else {
                         root.pan-started();
                     }
                 } else if (event.kind == PointerEventKind.up) {
+                    root.holding = false;
                     if (self.moving) {
                         root.released();
-                        if (!self.travelled && root.edge-at >= 0) {
+                        // A quick tap that began and ended on the same tab;
+                        // a hold or a slip off it is not one.
+                        if (!self.travelled && !root.held && root.down-edge >= 0
+                            && root.edge-at == root.down-edge) {
                             root.edge-tapped(root.edge-at);
                         }
                     } else if (!self.travelled) {
@@ -624,7 +644,8 @@ export component Lanes inherits Rectangle {
     in property <[ClipData]> clips;
     in property <TimelineTool> tool: TimelineTool.select;
     in property <float> playhead;
-    /// The edit's length: the phone's scrub bar runs exactly this far.
+    /// The edit's length: past it, a phone's lanes are shaded as beyond the
+    /// end.
     in property <float> duration;
     in property <float> frame-rate: 30;
     /// Seconds at the left edge of the lanes.
@@ -1128,18 +1149,6 @@ export component Lanes inherits Rectangle {
                     background: Theme.line;
                 }
 
-                // The phone's scrub bar: the edit's length, exactly, in the
-                // accent along the top of the ruler. The ruler under it is
-                // what takes the finger.
-                if root.phone && root.duration > 0: Rectangle {
-                    x: root.at(0);
-                    y: 1px;
-                    width: Math.max(2px, root.duration * root.px-per-second);
-                    height: 5px;
-                    border-radius: 2.5px;
-                    background: #ffd60a;
-                }
-
                 // The ruler is the scrub strip. Dragging in the lanes draws a
                 // band instead — the convention every NLE shares, and the only way
                 // the two gestures can share one surface.
@@ -1172,11 +1181,100 @@ export component Lanes inherits Rectangle {
                 selected(id) => { root.menu-selected(id); }
             }
 
+            // Past the end of the edit, on a phone: the timeline is as long
+            // as the video, and what lies beyond is shaded as outside it.
+            if root.phone && root.duration > 0: Rectangle {
+                x: Math.max(0px, root.at(root.duration));
+                y: root.ruler-height;
+                width: Math.max(0px, root.width - self.x);
+                height: root.height - root.ruler-height;
+                background: Theme.page.with-alpha(0.55);
+            }
+
+            // ── the phone's playhead ─────────────────────────────────────────
+            //
+            // A white line with a head under the ruler and a knob at the
+            // foot. Dragging the knob jogs through the edit, a pixel of drag
+            // a pixel of time at the current zoom.
+            if root.phone: Rectangle {
+                x: root.at(root.playhead) - self.width / 2;
+                y: 0;
+                width: 28px;
+                height: root.height;
+
+                Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: root.ruler-height - 2px;
+                    width: 2px;
+                    height: parent.height - root.ruler-height - 12px;
+                    border-radius: 1px;
+                    background: #ffffff;
+                    drop-shadow-blur: 3px;
+                    drop-shadow-color: #00000080;
+                }
+
+                Path {
+                    x: (parent.width - self.width) / 2;
+                    y: root.ruler-height - 9px;
+                    width: 12px;
+                    height: 8px;
+                    viewbox-width: 1;
+                    viewbox-height: 1;
+                    fit: fill;
+                    fill: #ffffff;
+                    commands: "M 0 0 L 1 0 L 0.5 1 Z";
+                }
+
+                knob := Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: parent.height - self.height - 2px;
+                    width: 22px;
+                    height: 14px;
+                    border-radius: 7px;
+                    background: jog.pressed ? Theme.accent : #ffffff;
+                    drop-shadow-blur: 4px;
+                    drop-shadow-color: #00000080;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 3px;
+                        for i in 2: VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 1.5px;
+                                height: 6px;
+                                background: #00000066;
+                            }
+                        }
+                    }
+                }
+
+                jog := TouchArea {
+                    x: knob.x - 10px;
+                    y: knob.y - 14px;
+                    width: knob.width + 20px;
+                    height: knob.height + 16px;
+                    property <float> from-time;
+                    property <length> from-x;
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down) {
+                            self.from-time = root.playhead;
+                            self.from-x = self.absolute-position.x + self.mouse-x;
+                        }
+                    }
+                    moved => {
+                        root.scrubbed(Math.max(0, self.from-time
+                            + (self.absolute-position.x + self.mouse-x - self.from-x)
+                                / root.px-per-second));
+                    }
+                }
+            }
+
             // ── the playhead ─────────────────────────────────────────────────
             //
             // Over everything, ruler included: it is the one thing that must never
             // be behind a clip.
-            Rectangle {
+            if !root.phone: Rectangle {
                 x: root.at(root.playhead);
                 y: 0;
                 width: 1px;
