@@ -1781,10 +1781,13 @@ impl Studio {
     /// A phone's placement: a new clip with no lane named goes on the lane
     /// of its part (see `lane_for`), and new footage joins the end of the
     /// main track.
-    fn place(&mut self, command: Command) -> Command {
+    fn place_by_role(&mut self, command: Command) -> Command {
         match command {
             Command::Batch { commands } => Command::Batch {
-                commands: commands.into_iter().map(|each| self.place(each)).collect(),
+                commands: commands
+                    .into_iter()
+                    .map(|each| self.place_by_role(each))
+                    .collect(),
             },
             Command::AddTextClip {
                 track_id: None,
@@ -1954,7 +1957,7 @@ impl Studio {
         // commit path sets `last_commit` again right after calling here.
         self.last_commit = None;
         let command = if self.compact {
-            self.place(command)
+            self.place_by_role(command)
         } else {
             command
         };
