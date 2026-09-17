@@ -35,6 +35,9 @@ jni = "0.22"
 # javac and d8 through the SDK, the way Slint's backend compiles its own
 # helper.
 android-build = "0.1"
+# For downloading AndroidX Core AAR at build time
+reqwest = { version = "0.12", features = ["blocking"] }
+zip = "0.6"
 
 # `cargo apk build -p concat-android` packages the shared object, the
 # sherpa-onnx runtime libraries and the manifest below into an APK. The
