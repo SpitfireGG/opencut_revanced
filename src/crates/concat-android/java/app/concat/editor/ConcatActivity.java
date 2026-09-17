@@ -12,18 +12,28 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 
-import androidx.core.view.WindowCompat;
-
 /**
  * Custom activity that extends NativeActivity to enable edge-to-edge display.
  * This ensures the window draws behind the status bar and navigation bar,
  * and properly reports safe area insets to Slint.
+ * Uses only platform APIs (no AndroidX dependency).
  */
 public class ConcatActivity extends NativeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // Enable edge-to-edge display: the window draws behind system bars
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        // WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        // Platform equivalent:
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().setDecorFitsSystemWindows(false);
+        } else {
+            // For older APIs, use legacy flags
+            getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            );
+        }
         
         super.onCreate(savedInstanceState);
         
@@ -41,14 +51,8 @@ public class ConcatActivity extends NativeActivity {
                     WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 );
             }
-        } else {
-            // For older APIs, use legacy flags
-            window.getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            );
         }
+        // Legacy flags already set above for API < 30
     }
     
     @Override
