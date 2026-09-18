@@ -822,8 +822,11 @@ export component PhoneEditor inherits Rectangle {
             background: Theme.line;
         }
 
-        // Back stays put while the clip's tools scroll beside it.
-        if root.has-clip: ToolButton {
+        // Back stays put while the clip's tools scroll beside it. Hidden,
+        // not removed: a button taken away by its own tap leaves the window
+        // holding that touch, and the next tap anywhere is lost.
+        ToolButton {
+            visible: root.has-clip;
             x: 4px;
             y: 6px;
             height: parent.height - 12px;
