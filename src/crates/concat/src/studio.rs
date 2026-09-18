@@ -8496,12 +8496,23 @@ impl Studio {
             "lock" => self.toggle_lock(&clip.track_id),
             "fit-width" => self.fit_width(&clip),
             "mirror" => {
-                self.apply(Command::UpdateClip {
-                    clip_id: id.to_owned(),
-                    patch: ClipPatch {
+                // Left to right as seen: a flip happens before the turn, so
+                // a clip turned on its side flips along its own height.
+                let turn = clip.rotation.to_radians();
+                let patch = if turn.sin().abs() > turn.cos().abs() {
+                    ClipPatch {
+                        flip_v: Some(!clip.flip_v),
+                        ..Default::default()
+                    }
+                } else {
+                    ClipPatch {
                         flip_h: Some(!clip.flip_h),
                         ..Default::default()
-                    },
+                    }
+                };
+                self.apply(Command::UpdateClip {
+                    clip_id: id.to_owned(),
+                    patch,
                 });
             }
             "rotate" => {
