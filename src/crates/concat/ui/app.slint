@@ -163,9 +163,15 @@ export component App inherits Window {
 
     // Phone-narrow is the phone layout. The same line the dock draws
     // between its wide and compact shapes; see `COMPACT_WIDTH`.
+    //
+    // Rust is told here too. It used to hear only from the desktop's
+    // workspace, which the phone layout never builds, so on a phone the
+    // editor ran as a desktop behind the phone's screens: no rows by part,
+    // no row icons, clips on the desktop's lanes.
     function measure() {
         Editor.compact = root.width < 860px;
         Theme.touch = Editor.compact;
+        Editor.layout-changed(Editor.compact);
     }
     init => { root.measure(); }
     // The dialogs. Both are held at the root because Slint has no portal: a

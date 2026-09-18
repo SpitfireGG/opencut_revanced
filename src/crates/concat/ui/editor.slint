@@ -80,6 +80,8 @@ export global Editor {
     /// because the minimum a pane may be squeezed to is a number of pixels,
     /// and it cannot know the window's size any other way.
     callback workspace-resized(width: length, height: length);
+    /// The window crossed into, or out of, the phone layout.
+    callback layout-changed(compact: bool);
 
     /// A seat's dropdown was used: show this view in this seat, and leave
     /// every other seat alone.
