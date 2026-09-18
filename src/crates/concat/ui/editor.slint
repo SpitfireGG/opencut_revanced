@@ -243,6 +243,9 @@ export global Editor {
     callback stage-pinch-started();
     /// Phone: a clip tapped on its row; the playhead moves into it.
     callback clip-focus(id: string);
+    /// Phone: the selected title takes a text preset's look, keeping its
+    /// words.
+    callback text-restyle(preset: string);
     /// Phone: one footage clip's sound on or off, from its speaker.
     callback clip-mute(id: string);
     callback stage-pinched(factor: float);

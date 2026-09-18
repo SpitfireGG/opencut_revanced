@@ -543,6 +543,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
     editor.on_media_activate(on_window!(|state, id: i32| {
         state.place_at_playhead(&format!("media:{id}"));
     }));
+    editor.on_text_restyle(on_window!(|state, preset: SharedString| {
+        state.restyle_title(preset.as_str());
+    }));
     editor.on_library_add_text(on_window!(|state, preset: SharedString| {
         state.place_at_playhead(&format!("text:{preset}:Title"));
     }));
