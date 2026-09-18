@@ -317,6 +317,7 @@ export component PhoneEditor inherits Rectangle {
     changed has-clip => {
         Editor.edge-chip = -1;
         if (!root.has-clip && (root.sheet == "clip" || root.sheet == "highlights"
+            || root.sheet == "crop"
             || (root.sheet == "library" && root.library-page >= 3))) {
             root.close();
         }
@@ -375,6 +376,9 @@ export component PhoneEditor inherits Rectangle {
         else if (tool.id == "freeze") { Editor.menu-selected("freeze"); }
         else if (tool.id == "detach") { Editor.menu-selected("detach"); }
         else if (tool.id == "project") { root.open("project", tool.id, tool.label); }
+        else if (tool.id == "ratio") { root.open("ratio", tool.id, I18n.t("Frame")); }
+        else if (tool.id == "crop") { root.open("crop", tool.id, tool.label); }
+        else if (tool.id == "mirror") { Editor.menu-selected("mirror"); }
         else if (tool.id == "highlights") { root.open("highlights", tool.id, tool.label); }
         else if (tool.id == "fit-width") { Editor.menu-selected("fit-width"); }
         else if (tool.id == "enhance") { Editor.menu-selected("enhance"); }
@@ -403,34 +407,41 @@ export component PhoneEditor inherits Rectangle {
         { id: "overlay", glyph: Glyph.image, label: I18n.t("Overlay") },
         { id: "music", glyph: Glyph.music, label: I18n.t("Music") },
         { id: "captions", glyph: Glyph.waveform, label: I18n.t("Subtitles") },
+        { id: "ratio", glyph: Glyph.frame, label: I18n.t("Ratio") },
         { id: "project", glyph: Glyph.info, label: I18n.t("Project") },
     ];
     property <PhoneTool> back-tool: { id: "back", glyph: Glyph.chevron-left, label: I18n.t("Back") };
+    // A clip's tools in the design's order - split, crop, volume, speed,
+    // mirror - then the rest.
     property <[PhoneTool]> video-tools: [
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
-        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
+        { id: "crop", glyph: Glyph.frame, label: I18n.t("Crop") },
         { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
         { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
+        { id: "mirror", glyph: Glyph.flip-h, label: I18n.t("Mirror") },
         { id: "captions", glyph: Glyph.waveform, label: I18n.t("Subtitles") },
-        { id: "highlights", glyph: Glyph.sparkle, label: I18n.t("Highlights") },
+        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
         { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
+        { id: "highlights", glyph: Glyph.sparkle, label: I18n.t("Highlights") },
         { id: "detach", glyph: Glyph.music, label: I18n.t("Detach audio") },
         { id: "freeze", glyph: Glyph.image, label: I18n.t("Freeze") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> image-tools: [
-        { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "crop", glyph: Glyph.frame, label: I18n.t("Crop") },
+        { id: "mirror", glyph: Glyph.flip-h, label: I18n.t("Mirror") },
+        { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
         { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> audio-tools: [
-        { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
-        { id: "duck", glyph: Glyph.volume-off, label: I18n.t("Auto duck") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
+        { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
         { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
+        { id: "duck", glyph: Glyph.volume-off, label: I18n.t("Auto duck") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
@@ -466,14 +477,6 @@ export component PhoneEditor inherits Rectangle {
         I18n.t("Feed, square"), I18n.t("Feed, square"),
         I18n.t("Landscape"), I18n.t("Landscape"),
     ];
-    property <string> shape-now: Editor.ratio-index == 6 ? "9:16"
-        : Editor.ratio-index == 2 ? "9:16"
-        : Editor.ratio-index == 7 || Editor.ratio-index == 9 ? "4:5"
-        : Editor.ratio-index == 8 || Editor.ratio-index == 3 ? "1:1"
-        : Editor.ratio-index == 1 || Editor.ratio-index == 0 ? "16:9"
-        : Editor.ratio-index == 4 ? "4:3"
-        : Editor.ratio-index == 5 ? "21:9"
-        : I18n.t("Custom");
 
     /// "1.25s", the way VN reads time.
     pure function seconds(t: float) -> string {
@@ -482,10 +485,8 @@ export component PhoneEditor inherits Rectangle {
     }
 
     // ── the arrangement ──────────────────────────────────────────────────
-    property <length> bar-h: 56px;
-    /// The scrub bar over the play controls.
-    property <length> scrub-h: 18px;
-    property <length> transport-h: root.scrub-h + 44px;
+    property <length> bar-h: 52px;
+    property <length> transport-h: 44px;
     /// The handle between the controls and the timeline.
     property <length> grip-h: 18px;
     property <length> tools-h: 58px;
@@ -505,10 +506,6 @@ export component PhoneEditor inherits Rectangle {
     /// Where the lanes begin.
     property <length> lower-y: root.bar-h + root.monitor-h + root.transport-h + root.grip-h;
 
-    /// The quick-action bar is up: the selected clip was just tapped, and
-    /// nothing else has been touched since.
-    property <bool> tip-open: root.has-clip && root.sheet == "" && !root.full
-        && Editor.tip-for != "" && Editor.tip-for == Editor.selected-clip.id;
     function tip-off() {
         Editor.tip-for = "";
         Editor.edge-chip = -1;
@@ -536,7 +533,8 @@ export component PhoneEditor inherits Rectangle {
         }
     }
 
-    // The project bar.
+    // The project bar, as the design lays it: back, the project's name in
+    // the middle, and two quiet icons - settings and export.
     Rectangle {
         x: 0;
         y: 0;
@@ -544,109 +542,42 @@ export component PhoneEditor inherits Rectangle {
         height: root.bar-h;
         visible: !root.full;
 
+        BarButton {
+            x: 4px;
+            y: (parent.height - self.height) / 2;
+            glyph: Glyph.chevron-left;
+            icon-size: 22px;
+            clicked => { Editor.shortcut("close-project"); }
+        }
+
+        Text {
+            x: 56px;
+            width: parent.width - 112px;
+            height: parent.height;
+            text: root.project-name;
+            color: Theme.fg;
+            font-size: Theme.fs-lg;
+            font-weight: Theme.weight-title;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
         HorizontalLayout {
-            padding-left: 4px;
-            padding-right: 12px;
-            spacing: 4px;
+            x: parent.width - self.preferred-width - 4px;
+            y: (parent.height - 44px) / 2;
+            height: 44px;
+            spacing: 0px;
 
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.chevron-left;
-                    icon-size: 24px;
-                    clicked => { Editor.shortcut("close-project"); }
-                }
+            BarButton {
+                glyph: Glyph.settings;
+                icon-size: 19px;
+                clicked => { Editor.shortcut("settings"); }
             }
-
-            // The frame shape, one tap from any other.
-            Rectangle {
-                horizontal-stretch: 1;
-
-                shape := Rectangle {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    width: shape-row.preferred-width + 24px;
-                    height: 36px;
-                    border-radius: 18px;
-                    background: shape-touch.pressed || root.sheet == "ratio"
-                        ? Theme.field : Colors.transparent;
-
-                    shape-row := HorizontalLayout {
-                        x: 12px;
-                        spacing: 8px;
-
-                        VerticalLayout {
-                            alignment: center;
-                            Icon { glyph: Glyph.frame; size: 18px; tint: Theme.fg; }
-                        }
-                        Text {
-                            text: root.shape-now;
-                            color: Theme.fg;
-                            font-size: Theme.fs-input;
-                            vertical-alignment: center;
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Icon { glyph: Glyph.chevron-down; size: 14px; tint: Theme.fg; }
-                        }
-                    }
-
-                    shape-touch := TouchArea {
-                        clicked => { root.open("ratio", "ratio", I18n.t("Frame")); }
-                    }
-                }
-            }
-
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.settings;
-                    clicked => { Editor.shortcut("settings"); }
-                }
-            }
-
-            VerticalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 44px;
-                    height: 36px;
-                    border-radius: Theme.r;
-                    background: save.pressed ? Theme.field-active : Theme.field;
-
-                    Icon {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        glyph: Glyph.check;
-                        size: 20px;
-                        tint: Theme.fg;
-                    }
-                    save := TouchArea {
-                        clicked => { Editor.shortcut("save"); }
-                    }
-                }
-            }
-
-            Rectangle { width: 4px; }
-
-            VerticalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 52px;
-                    height: 36px;
-                    border-radius: Theme.r;
-                    background: export.pressed ? Theme.accent-hover : Theme.accent;
-
-                    Icon {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        glyph: Glyph.export;
-                        size: 20px;
-                        tint: Theme.on-accent;
-                    }
-                    export := TouchArea {
-                        clicked => { Editor.shortcut("export"); }
-                    }
-                }
+            BarButton {
+                glyph: Glyph.export;
+                icon-size: 19px;
+                clicked => { Editor.shortcut("export"); }
             }
         }
     }
@@ -671,16 +602,6 @@ export component PhoneEditor inherits Rectangle {
         clicked => { root.safe-zones = !root.safe-zones; }
     }
 
-    if !root.full: BarButton {
-        x: root.width - self.width - 8px;
-        y: root.bar-h + root.monitor-h - self.height - 8px;
-        glyph: Glyph.maximize;
-        clicked => {
-            root.close();
-            root.full = true;
-        }
-    }
-
     if root.full: ReelChrome {
         width: root.width;
         height: root.height;
@@ -688,7 +609,9 @@ export component PhoneEditor inherits Rectangle {
         closed => { root.full = false; }
     }
 
-    // The transport.
+    // The transport, as the design lays it: the time on the left, play in
+    // the middle over the playhead, and undo, redo and full screen on the
+    // right.
     Rectangle {
         x: 0;
         y: root.bar-h + root.monitor-h;
@@ -696,156 +619,65 @@ export component PhoneEditor inherits Rectangle {
         height: root.transport-h;
         visible: !root.full;
 
-        Rectangle {
-            x: 0;
-            y: 0;
-            width: parent.width;
-            height: 1px;
-            background: Theme.line;
+        HorizontalLayout {
+            x: 14px;
+            height: parent.height;
+            spacing: 4px;
+
+            Text {
+                text: root.seconds(Editor.playhead);
+                color: Theme.fg;
+                font-family: Theme.font-technical;
+                font-size: Theme.fs;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "/ " + root.seconds(Editor.preview-duration);
+                color: Theme.fg-dim;
+                font-family: Theme.font-technical;
+                font-size: Theme.fs;
+                vertical-alignment: center;
+            }
         }
 
-        // The scrub bar: the whole edit, end to end, and where the playhead
-        // is in it. Tap or drag anywhere along it.
-        scrubber := Rectangle {
-            x: 16px;
-            y: 0;
-            width: parent.width - 32px;
-            height: root.scrub-h;
-
-            property <float> done: Math.min(1, Math.max(0,
-                Editor.playhead / Math.max(0.01, Editor.preview-duration)));
-
-            Rectangle {
-                x: 0;
-                y: (parent.height - self.height) / 2 + 2px;
-                width: parent.width;
-                height: seek.pressed ? 5px : 3px;
-                border-radius: self.height / 2;
-                background: Theme.field-active;
-
-                Rectangle {
-                    x: 0;
-                    y: 0;
-                    width: parent.width * scrubber.done;
-                    height: parent.height;
-                    border-radius: parent.border-radius;
-                    background: Theme.accent;
-                }
-
-                animate height { duration: 120ms; easing: ease-out; }
-            }
-
-            Rectangle {
-                x: parent.width * parent.done - self.width / 2;
-                y: (parent.height - self.height) / 2 + 2px;
-                width: seek.pressed ? 14px : 10px;
-                height: self.width;
-                border-radius: self.width / 2;
-                background: #ffffff;
-                drop-shadow-blur: 3px;
-                drop-shadow-color: #00000066;
-
-                animate width { duration: 120ms; easing: ease-out; }
-            }
-
-            seek := TouchArea {
-                y: -4px;
-                height: parent.height + 8px;
-                pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down) {
-                        root.tip-off();
-                        Editor.scrubbed(Math.max(0, Math.min(1, self.mouse-x / self.width))
-                            * Editor.preview-duration);
-                    }
-                }
-                moved => {
-                    Editor.scrubbed(Math.max(0, Math.min(1, self.mouse-x / self.width))
-                        * Editor.preview-duration);
-                }
+        BarButton {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            glyph: Editor.playing ? Glyph.pause : Glyph.play;
+            icon-size: 24px;
+            clicked => {
+                root.tip-off();
+                Editor.play-toggled();
             }
         }
 
         HorizontalLayout {
-            y: root.scrub-h;
-            height: parent.height - root.scrub-h;
-            padding-left: 14px;
-            padding-right: 4px;
+            x: parent.width - self.preferred-width - 4px;
+            y: (parent.height - 44px) / 2;
+            height: 44px;
 
-            HorizontalLayout {
-                horizontal-stretch: 1;
-                spacing: 4px;
-                alignment: start;
-
-                Text {
-                    text: root.seconds(Editor.playhead);
-                    color: Theme.fg;
-                    font-family: Theme.font-technical;
-                    font-size: Theme.fs-lg;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: "/ " + root.seconds(Editor.preview-duration);
-                    color: Theme.fg-dim;
-                    font-family: Theme.font-technical;
-                    font-size: Theme.fs-lg;
-                    vertical-alignment: center;
+            BarButton {
+                glyph: Glyph.undo;
+                icon-size: 18px;
+                clicked => {
+                    root.tip-off();
+                    Editor.shortcut("undo");
                 }
             }
-
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.skip-back;
-                    clicked => {
-                        root.tip-off();
-                        Editor.seek(0);
-                    }
+            BarButton {
+                glyph: Glyph.redo;
+                icon-size: 18px;
+                clicked => {
+                    root.tip-off();
+                    Editor.shortcut("redo");
                 }
             }
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Editor.playing ? Glyph.pause : Glyph.play;
-                    icon-size: 26px;
-                    clicked => {
-                        root.tip-off();
-                        Editor.play-toggled();
-                    }
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.skip-forward;
-                    clicked => {
-                        root.tip-off();
-                        Editor.seek(Editor.preview-duration);
-                    }
-                }
-            }
-
-            Rectangle {
-                horizontal-stretch: 1;
-            }
-
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.undo;
-                    clicked => {
-                        root.tip-off();
-                        Editor.shortcut("undo");
-                    }
-                }
-            }
-            VerticalLayout {
-                alignment: center;
-                BarButton {
-                    glyph: Glyph.redo;
-                    clicked => {
-                        root.tip-off();
-                        Editor.shortcut("redo");
-                    }
+            BarButton {
+                glyph: Glyph.maximize;
+                icon-size: 18px;
+                clicked => {
+                    root.close();
+                    root.full = true;
                 }
             }
         }
@@ -1026,91 +858,8 @@ export component PhoneEditor inherits Rectangle {
         }
     }
 
-    // ── the clip's quick actions ─────────────────────────────────────────
-    //
-    // Over the top of the lanes while a clip is selected, the way VN floats
-    // them over its timeline: the verbs a thumb wants most, one tap each.
-    property <[PhoneTool]> quick-tools: [
-        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
-        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
-        { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
-        { id: "lock", glyph: Glyph.lock, label: I18n.t("Lock") },
-        { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
-    ];
-
-    // Any touch away from the bar puts it away. Over everything above the
-    // lanes; in the lanes, a touch reaches them and they put it away.
-    if root.tip-open: TouchArea {
-        x: 0;
-        y: 0;
-        width: root.width;
-        height: root.lower-y;
-        pointer-event(event) => {
-            if (event.kind == PointerEventKind.down) {
-                root.tip-off();
-            }
-        }
-    }
-
-    // Over the foot of the picture, never over the rows: a bar laid on the
-    // lanes hid the top row and swallowed the swipe meant for it.
-    if root.tip-open: Rectangle {
-        x: (root.width - self.width) / 2;
-        y: root.bar-h + root.monitor-h - self.height - 10px;
-        width: quick.preferred-width;
-        height: 56px;
-        border-radius: 14px;
-        background: Theme.accent;
-        drop-shadow-blur: 12px;
-        drop-shadow-offset-y: 3px;
-        drop-shadow-color: #00000066;
-
-        quick := HorizontalLayout {
-            padding-left: 6px;
-            padding-right: 6px;
-
-            for tool in root.quick-tools: Rectangle {
-                width: 62px;
-                border-radius: 10px;
-                background: press.pressed ? Theme.on-accent.with-alpha(0.12) : Colors.transparent;
-
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 3px;
-
-                    HorizontalLayout {
-                        alignment: center;
-                        Icon {
-                            glyph: tool.glyph;
-                            size: 20px;
-                            weight: 1.9;
-                            tint: Theme.on-accent;
-                        }
-                    }
-                    Text {
-                        text: tool.label;
-                        color: Theme.on-accent;
-                        font-size: Theme.fs-xs;
-                        horizontal-alignment: center;
-                        overflow: elide;
-                    }
-                }
-
-                press := TouchArea {
-                    clicked => {
-                        if (tool.id == "lock") {
-                            Editor.menu-selected("lock");
-                        } else {
-                            root.run(tool);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // A tapped handle's offer: run that end of the clip out to its media's.
-    if root.tip-open && Editor.edge-chip >= 0: Rectangle {
+    if root.has-clip && Editor.edge-chip >= 0 && root.sheet == "" && !root.full: Rectangle {
         x: (root.width - self.width) / 2;
         y: root.bar-h + root.monitor-h - 56px - 10px - self.height - 8px;
         width: chip.preferred-width;
@@ -1343,6 +1092,76 @@ export component PhoneEditor inherits Rectangle {
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+
+                // The design's crop: the shapes as chips, each drawn as the
+                // shape it cuts to, and the turns under them.
+                if root.sheet == "crop": VerticalLayout {
+                    padding: 14px;
+                    spacing: 18px;
+                    alignment: start;
+
+                    Flickable {
+                        height: 84px;
+                        viewport-width: Math.max(self.width, chips.preferred-width);
+
+                        chips := HorizontalLayout {
+                            spacing: 18px;
+                            alignment: start;
+
+                            for shape in [
+                                { id: "free", label: I18n.t("Free"), w: 0, h: 0 },
+                                { id: "1:1", label: "1:1", w: 1, h: 1 },
+                                { id: "2:3", label: "2:3", w: 2, h: 3 },
+                                { id: "3:2", label: "3:2", w: 3, h: 2 },
+                                { id: "3:4", label: "3:4", w: 3, h: 4 },
+                                { id: "4:3", label: "4:3", w: 4, h: 3 },
+                                { id: "9:16", label: "9:16", w: 9, h: 16 },
+                                { id: "16:9", label: "16:9", w: 16, h: 9 },
+                            ]: VerticalLayout {
+                                width: 52px;
+                                spacing: 8px;
+
+                                Text {
+                                    text: shape.label;
+                                    color: Theme.fg;
+                                    font-size: Theme.fs;
+                                    horizontal-alignment: center;
+                                }
+                                Rectangle {
+                                    height: 44px;
+
+                                    Rectangle {
+                                        property <float> long: Math.max(1, Math.max(shape.w, shape.h));
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        width: shape.w == 0 ? 30px : 36px * shape.w / self.long;
+                                        height: shape.h == 0 ? 30px : 36px * shape.h / self.long;
+                                        border-radius: 4px;
+                                        border-width: 1.5px;
+                                        border-color: crop-chip.pressed ? Theme.accent : Theme.fg-muted;
+                                    }
+                                    crop-chip := TouchArea {
+                                        clicked => { Editor.menu-selected("crop:" + shape.id); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: center;
+
+                        PillButton {
+                            label: I18n.t("Rotate");
+                            clicked => { Editor.menu-selected("rotate"); }
+                        }
+                        PillButton {
+                            label: I18n.t("Mirror");
+                            clicked => { Editor.menu-selected("mirror"); }
                         }
                     }
                 }

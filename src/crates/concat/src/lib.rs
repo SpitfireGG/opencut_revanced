@@ -887,6 +887,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
     editor.on_stage_released(on_window!(|state| {
         state.stage_released();
     }));
+    editor.on_clip_mute(on_window!(|state, id: SharedString| {
+        state.clip_action(id.as_str(), "mute");
+    }));
     editor.on_clip_focus(on_window!(|state, id: SharedString| {
         state.focus_clip(id.as_str());
     }));

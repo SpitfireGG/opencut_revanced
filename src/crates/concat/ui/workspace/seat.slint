@@ -368,6 +368,7 @@ export component Seat inherits Rectangle {
                 Editor.tip-for = id;
                 Editor.edge-chip = -1;
             }
+            clip-mute(id) => { Editor.clip-mute(id); }
             row-add(role) => {
                 Editor.add-role = role;
                 Editor.add-token += 1;

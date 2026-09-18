@@ -715,7 +715,6 @@
   "Hologram": "Hologram",
   "Landscape": "Landscape",
   "Listening on {0} · {1} connected": "Listening on {0} · {1} connected",
-  "Lock": "Lock",
   "Made a Reel from the highlight": "Made a Reel from the highlight",
   "Make Reel": "Make Reel",
   "Music": "Music",
@@ -743,10 +742,6 @@
   "Style": "Style",
   "Subtitles": "Subtitles",
   "Tap + to pick videos from your gallery. They go straight onto a new 9:16 timeline.": "Tap + to pick videos from your gallery. They go straight onto a new 9:16 timeline.",
-  "Tap to add an overlay": "Tap to add an overlay",
-  "Tap to add music": "Tap to add music",
-  "Tap to add text": "Tap to add text",
-  "Tap to add video": "Tap to add video",
   "Tear": "Tear",
   "The clip is shorter than that": "The clip is shorter than that",
   "The first run downloads the speech model (148 MB), then makes the captions.": "The first run downloads the speech model (148 MB), then makes the captions.",
@@ -761,5 +756,12 @@
   "What a connection must present before its first call. Empty on 127.0.0.1 lets anything on this machine in.": "What a connection must present before its first call. Empty on 127.0.0.1 lets anything on this machine in.",
   "Your projects": "Your projects",
   "your.account": "your.account",
-  "{0} is not an address like 127.0.0.1:7420": "{0} is not an address like 127.0.0.1:7420"
+  "{0} is not an address like 127.0.0.1:7420": "{0} is not an address like 127.0.0.1:7420",
+  "Add music": "Add music",
+  "Add photo/sticker": "Add photo/sticker",
+  "Add text": "Add text",
+  "Add video": "Add video",
+  "Free": "Free",
+  "Ratio": "Ratio",
+  "Rotate": "Rotate"
 }

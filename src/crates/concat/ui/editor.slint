@@ -243,6 +243,8 @@ export global Editor {
     callback stage-pinch-started();
     /// Phone: a clip tapped on its row; the playhead moves into it.
     callback clip-focus(id: string);
+    /// Phone: one footage clip's sound on or off, from its speaker.
+    callback clip-mute(id: string);
     callback stage-pinched(factor: float);
 
     /// A custom cutout's brush, as the inspector set it: which of the four

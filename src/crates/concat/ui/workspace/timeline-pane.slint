@@ -74,6 +74,7 @@ export component TimelinePane inherits Rectangle {
     /// Phone: see Lanes.clip-tapped and Lanes.row-add.
     callback clip-tapped(id: string);
     callback row-add(role: int);
+    callback clip-mute(id: string);
     /// A press on an empty stretch of lane; see Editor.blur.
     callback floor-pressed();
     callback clip-pressed(id: string, additive: bool, edge: int);
@@ -137,16 +138,18 @@ export component TimelinePane inherits Rectangle {
     /// pane that grows again finds its column where it left it.
     property <length> headers-w: root.phone ? 0px : Math.max(0px,
         Math.min(root.header-width, root.width / 2));
-    in property <length> ruler-height: root.phone ? 22px : 28px;
+    /// On a phone the ruler is under the rows; this is only the gap above
+    /// the first.
+    in property <length> ruler-height: root.phone ? 6px : 28px;
 
     /// Clamped here rather than only where it is written, so a pane dragged
     /// taller than its own track stack cannot stay parked past the end. The
     /// stack is measured off its last lane, since the lanes differ in height
     /// and there is no one value to multiply out.
-    property <length> stack-h: root.tracks.length > 0
+    property <length> stack-h: (root.tracks.length > 0
         ? root.tracks[root.tracks.length - 1].top
             + root.tracks[root.tracks.length - 1].height
-        : 0px;
+        : 0px) + (root.phone ? 24px : 0px);
     property <length> overflow: Math.max(0px,
         root.stack-h - Math.max(0px, lanes.height - root.ruler-height));
     property <length> at: Math.max(0px, Math.min(root.overflow, root.track-scroll));
@@ -271,6 +274,7 @@ export component TimelinePane inherits Rectangle {
                 clip-edge-tapped(id, edge) => { root.clip-edge-tapped(id, edge); }
                 clip-tapped(id) => { root.clip-tapped(id); }
                 row-add(role) => { root.row-add(role); }
+                clip-mute(id) => { root.clip-mute(id); }
                 floor-pressed => { root.floor-pressed(); }
                 clip-pressed(id, additive, edge) => { root.clip-pressed(id, additive, edge); }
                 clip-dragged(seconds, pixels) => { root.clip-dragged(seconds, pixels); }

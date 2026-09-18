@@ -101,8 +101,9 @@ const STANDARD_LANES: [u8; 4] = [ROLE_FOOTAGE, ROLE_OVERLAY, ROLE_WORDS, ROLE_SO
 /// frames, the rest a slim bar with room between them; a spare lane none.
 fn phone_row_height(role: u8) -> f32 {
     match role {
-        ROLE_FOOTAGE => 64.0,
-        ROLE_WORDS | ROLE_OVERLAY | ROLE_SOUND => 38.0,
+        ROLE_FOOTAGE => 56.0,
+        ROLE_SOUND => 38.0,
+        ROLE_WORDS | ROLE_OVERLAY => 36.0,
         _ => 0.0,
     }
 }
@@ -6802,7 +6803,7 @@ impl Studio {
                 muted: self.footage_muted(),
                 locked: false,
                 size: TrackSize::Auto,
-                height: 30.0,
+                height: 28.0,
                 top: footage_end,
             });
         }
@@ -8433,6 +8434,29 @@ impl Studio {
             }
             "lock" => self.toggle_lock(&clip.track_id),
             "fit-width" => self.fit_width(&clip),
+            "mirror" => {
+                self.apply(Command::UpdateClip {
+                    clip_id: id.to_owned(),
+                    patch: ClipPatch {
+                        flip_h: Some(!clip.flip_h),
+                        ..Default::default()
+                    },
+                });
+            }
+            "rotate" => {
+                // A quarter turn clockwise, wrapping in the inspector's range.
+                let turned = (clip.rotation + 90.0 + 180.0).rem_euclid(360.0) - 180.0;
+                self.apply(Command::SetClipTransform {
+                    clip_id: id.to_owned(),
+                    scale: None,
+                    offset_x: None,
+                    offset_y: None,
+                    rotation: Some(turned),
+                    stretch_x: None,
+                    stretch_y: None,
+                });
+            }
+            ratio if ratio.starts_with("crop:") => self.crop_to(&clip, &ratio["crop:".len()..]),
             "extend-start" | "extend-end" => self.extend(&clip, action == "extend-start"),
             "enhance" => self.enhance_voice(&clip),
             "duck" => self.duck_under_speech(&clip),
@@ -8450,6 +8474,35 @@ impl Studio {
             }
             _ => {}
         }
+    }
+
+    /// Crops a picture to a shape, centred: `"1:1"`, `"9:16"`, or `"free"`
+    /// for the whole picture back.
+    fn crop_to(&mut self, clip: &Clip, ratio: &str) {
+        let crop = match ratio.split_once(':') {
+            None => None,
+            Some((w, h)) => {
+                let (Ok(w), Ok(h)) = (w.parse::<f64>(), h.parse::<f64>()) else {
+                    return;
+                };
+                let Some((mw, mh)) = self
+                    .project()
+                    .media_by_id(&clip.media_id)
+                    .and_then(|media| Some((f64::from(media.width?), f64::from(media.height?))))
+                else {
+                    return;
+                };
+                centred_crop(mw / mh, w / h)
+            }
+        };
+        self.apply(Command::UpdateClip {
+            clip_id: clip.id.clone(),
+            patch: ClipPatch {
+                crop: Some(crop),
+                ..Default::default()
+            },
+        });
+        self.request_preview();
     }
 
     /// Scales a picture so it spans the frame's width, centred across it:
@@ -8867,6 +8920,26 @@ fn wrap_caption(sentence: &str) -> Vec<String> {
     lines
 }
 
+/// The crop that leaves a picture of shape `source` (width over height) at
+/// shape `target`, taken evenly off both sides; None when they already
+/// match.
+fn centred_crop(source: f64, target: f64) -> Option<model::Crop> {
+    if source <= 0.0 || target <= 0.0 || (source - target).abs() < 1e-3 {
+        return None;
+    }
+    let (across, down) = if source > target {
+        ((1.0 - target / source) / 2.0, 0.0)
+    } else {
+        (0.0, (1.0 - source / target) / 2.0)
+    };
+    Some(model::Crop {
+        left: across,
+        top: down,
+        right: across,
+        bottom: down,
+    })
+}
+
 /// "1:05", for a highlight's range.
 fn short_time(seconds: f64) -> String {
     let whole = seconds.max(0.0).round() as u64;
@@ -8943,7 +9016,20 @@ fn word_groups(words: &[&concat_speech::transcribe::Word]) -> Vec<(String, f64, 
 
 #[cfg(test)]
 mod tests {
-    use super::{Footprint, Studio, best_windows, script_captions, word_groups};
+    use super::{Footprint, Studio, best_windows, centred_crop, script_captions, word_groups};
+
+    #[test]
+    fn a_crop_takes_evenly_off_the_long_sides() {
+        // 16:9 to square: a quarter-and-a-bit off each side, none off the top.
+        let crop = centred_crop(16.0 / 9.0, 1.0).expect("crops");
+        assert!((crop.left - (1.0 - 9.0 / 16.0) / 2.0).abs() < 1e-9);
+        assert_eq!((crop.top, crop.bottom), (0.0, 0.0));
+        // 9:16 to 1:1: off the top and bottom instead.
+        let crop = centred_crop(9.0 / 16.0, 1.0).expect("crops");
+        assert_eq!((crop.left, crop.right), (0.0, 0.0));
+        assert!((crop.top - (1.0 - 9.0 / 16.0) / 2.0).abs() < 1e-9);
+        assert!(centred_crop(1.0, 1.0).is_none());
+    }
 
     #[test]
     fn highlights_find_the_loud_stretch_and_never_overlap() {

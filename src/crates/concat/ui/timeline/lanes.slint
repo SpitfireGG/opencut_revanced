@@ -163,12 +163,20 @@ component Clip inherits Rectangle {
     /// the same words a second time in a taller clip. A filter layer is all
     /// strip too - one bar, the look's mark before its name - since it has
     /// no picture and no sound to show under a header.
+    ///
+    /// On a phone every clip but footage is one pill - its mark, its name
+    /// and its length - and footage is its frames alone, as the design
+    /// draws them.
     property <bool> all-strip: root.item.kind == ClipKind.text
-        || root.item.kind == ClipKind.filter;
-    property <length> header-h: root.all-strip ? root.height : 17px;
+        || root.item.kind == ClipKind.filter
+        || (root.phone && root.item.kind != ClipKind.video);
+    property <length> header-h: root.phone && root.item.kind == ClipKind.video ? 0px
+        : root.all-strip ? root.height : 17px;
     /// A filter layer wears its mark before its name, the way the look is
-    /// told from a title or a sound on the lanes at a glance.
-    property <bool> marked: root.item.kind == ClipKind.filter;
+    /// told from a title or a sound on the lanes at a glance; on a phone
+    /// every pill does.
+    property <bool> marked: root.item.kind == ClipKind.filter
+        || (root.phone && root.item.kind != ClipKind.video);
     property <length> text-x: root.marked ? 22px : 7px;
     property <length> body-h: Math.max(0px, root.height - root.header-h);
     /// The phone's sound strip under a video's frames; none without sound.
@@ -362,10 +370,25 @@ component Clip inherits Rectangle {
         border-bottom-right-radius: root.all-strip ? Theme.r-sm : 0px;
         background: root.mark;
 
+        // A sound's envelope runs faintly through its pill.
+        if root.phone && root.item.kind == ClipKind.audio && root.item.wave != "": Path {
+            x: 0;
+            y: 3px;
+            width: parent.width;
+            height: parent.height - 6px;
+            commands: root.item.wave;
+            viewbox-width: 1;
+            viewbox-height: 1;
+            fit: fill;
+            fill: Theme.clip-ink.with-alpha(0.3);
+        }
+
         if root.marked && root.width > 20px: Icon {
             x: 6px;
             y: (parent.height - self.height) / 2;
-            glyph: Glyph.filter;
+            glyph: root.item.kind == ClipKind.filter ? Glyph.filter
+                : root.item.kind == ClipKind.text ? Glyph.text-mark
+                : root.badge;
             size: 11px;
             tint: Theme.clip-ink;
         }
@@ -377,8 +400,9 @@ component Clip inherits Rectangle {
                 - (root.item.fx && root.width > 60px ? 20px : 0px);
             height: parent.height;
             // A title shows its own words, as they read on the picture.
-            text: root.item.kind == ClipKind.text && root.item.text-body != ""
-                ? root.item.text-body : root.item.name;
+            text: (root.item.kind == ClipKind.text && root.item.text-body != ""
+                ? root.item.text-body : root.item.name)
+                + (root.phone ? "  •  \{Fmt.round-to(root.item.duration, 2)}s" : "");
             color: Theme.clip-ink;
             font-size: Theme.fs-sm;
             vertical-alignment: center;
@@ -660,6 +684,8 @@ export component Lanes inherits Rectangle {
     callback clip-tapped(id: string);
     /// Phone: an empty row's "Tap to add" tapped, with the row's part.
     callback row-add(role: int);
+    /// Phone: a footage clip's speaker, in the sound row, tapped.
+    callback clip-mute(id: string);
     /// A press on an empty stretch of lane, before the band it may become.
     callback floor-pressed();
     callback clip-pressed(id: string, additive: bool, edge: int);
@@ -925,9 +951,10 @@ export component Lanes inherits Rectangle {
 
             // ── the phone's rows ─────────────────────────────────────────────
             //
-            // Each part's row is a bar from the start of the edit to its
-            // end, and nothing either side of it: VN's rows. An empty one
-            // says what it is for and adds it when tapped.
+            // An empty row is a bar from the start of the edit to its end
+            // saying what it takes, and tapping it adds that; a row with
+            // clips is its clips alone. The overlay row carries the cover
+            // just before the edit starts, as the design has it.
             for track in root.tracks: Rectangle {
                 property <length> from: root.at(0);
                 property <length> to: root.duration > 0 ? root.at(root.duration) : root.width;
@@ -936,8 +963,6 @@ export component Lanes inherits Rectangle {
                 y: root.ruler-height + track.top - root.track-scroll + 3px;
                 width: Math.max(0px, Math.min(root.width, self.to) - self.x);
                 height: Math.max(0px, track.height - 6px);
-                // Only an empty row is drawn: a row with clips is its clips,
-                // each exactly as long as it is, and nothing else.
                 visible: root.phone && track.empty && track.role >= 0 && track.role <= 3
                     && track.height > 0 && self.width > 0
                     && self.y + self.height > root.ruler-height && self.y < root.height;
@@ -947,12 +972,12 @@ export component Lanes inherits Rectangle {
                 Text {
                     x: Math.max(10px, -parent.from + 10px);
                     height: parent.height;
-                    text: track.role == 0 ? I18n.t("Tap to add video")
-                        : track.role == 1 ? I18n.t("Tap to add text")
-                        : track.role == 2 ? I18n.t("Tap to add an overlay")
-                        : I18n.t("Tap to add music");
+                    text: track.role == 0 ? I18n.t("Add video")
+                        : track.role == 1 ? I18n.t("Add text")
+                        : track.role == 2 ? I18n.t("Add photo/sticker")
+                        : I18n.t("Add music");
                     color: Theme.fg-dim;
-                    font-size: Theme.fs;
+                    font-size: Theme.fs-sm;
                     vertical-alignment: center;
                 }
 
@@ -962,22 +987,82 @@ export component Lanes inherits Rectangle {
                 }
             }
 
-            // The footage's sound, under it: each video's envelope as bars,
-            // in the last row, which Rust keeps for it.
-            for entry in root.clips: Path {
+            // The cover, on the overlay row just before the edit starts.
+            for track in root.tracks: Rectangle {
+                x: root.at(0) - self.width - 6px;
+                y: root.ruler-height + track.top - root.track-scroll + 2px;
+                width: 78px;
+                height: Math.max(0px, track.height - 4px);
+                visible: root.phone && track.first && track.role == 2
+                    && self.x + self.width > 0;
+                border-radius: 4px;
+                background: cover.pressed ? Theme.field-active : Theme.field;
+
+                HorizontalLayout {
+                    padding-left: 6px;
+                    spacing: 6px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon { glyph: Glyph.image; size: 13px; tint: Theme.fg; }
+                    }
+                    Text {
+                        text: I18n.t("Cover");
+                        color: Theme.fg;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                }
+
+                cover := TouchArea {
+                    enabled: parent.visible;
+                    clicked => { root.scrubbed(0); }
+                }
+            }
+
+            // The footage's sound, in the row under it: each clip's own
+            // envelope with its own speaker at its start - tap it to mute
+            // that clip - and the selected clip's in the accent.
+            for entry in root.clips: Rectangle {
                 property <TrackData> sound: root.tracks[root.tracks.length - 1];
 
                 x: root.at(entry.start);
-                y: root.ruler-height + self.sound.top - root.track-scroll + 5px;
-                width: Math.max(2px, entry.duration * root.px-per-second);
-                height: Math.max(0px, self.sound.height - 10px);
-                visible: root.phone && entry.kind == ClipKind.video && entry.wave != ""
+                y: root.ruler-height + self.sound.top - root.track-scroll + 3px;
+                width: Math.max(2px, entry.duration * root.px-per-second - 2px);
+                height: Math.max(0px, self.sound.height - 6px);
+                visible: root.phone && entry.kind == ClipKind.video
                     && self.x + self.width > 0 && self.x < root.width;
-                commands: entry.wave;
-                viewbox-width: 1;
-                viewbox-height: 1;
-                fit: fill;
-                fill: self.sound.muted ? Theme.fg-dim.with-alpha(0.4) : #e6c34a;
+                border-radius: 3px;
+                background: Theme.field;
+                clip: true;
+
+                if entry.wave != "": Path {
+                    x: 22px;
+                    y: 3px;
+                    width: parent.width - 24px;
+                    height: parent.height - 6px;
+                    commands: entry.wave;
+                    viewbox-width: 1;
+                    viewbox-height: 1;
+                    fit: fill;
+                    fill: entry.volume <= 0 ? Theme.fg-dim.with-alpha(0.35)
+                        : entry.selected ? Theme.accent : Theme.fg-muted;
+                }
+
+                Rectangle {
+                    x: 0;
+                    width: 22px;
+                    height: parent.height;
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        glyph: entry.volume <= 0 ? Glyph.volume-off : Glyph.volume;
+                        size: 12px;
+                        tint: entry.volume <= 0 ? Theme.fg-dim : Theme.fg;
+                    }
+                    TouchArea {
+                        clicked => { root.clip-mute(entry.id); }
+                    }
+                }
             }
 
             // ── the clips ────────────────────────────────────────────────────
@@ -1136,7 +1221,7 @@ export component Lanes inherits Rectangle {
             //
             // Last, so it paints over any lane scrolled up behind it, and so its
             // scrub area sits above the band's.
-            Rectangle {
+            if !root.phone: Rectangle {
                 x: 0;
                 y: 0;
                 width: parent.width;
@@ -1237,23 +1322,58 @@ export component Lanes inherits Rectangle {
                 selected(id) => { root.menu-selected(id); }
             }
 
-            // ── the phone's row icons, cover and add ─────────────────────────
+            // ── the phone's plus between footage clips ───────────────────────
             //
-            // Each part's icon sits just left of where the edit starts and
-            // moves with it, then stays at the left edge once the edit has
-            // slid past, the way VN's do; the cover sits further left, and
-            // a plus follows the end of the footage.
+            // A small square at the end of every piece of footage, as the
+            // design has between clips: more footage.
+            for entry in root.clips: Rectangle {
+                x: root.at(entry.start + entry.duration) - self.width / 2;
+                y: root.row-y(entry.row) + (root.tracks[entry.row].height - self.height) / 2;
+                width: 18px;
+                height: 18px;
+                visible: root.phone && entry.kind == ClipKind.video
+                    && self.x + self.width > 0 && self.x < root.width;
+                border-radius: 4px;
+                background: plus.pressed ? Theme.accent : #ffffff;
+
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    glyph: Glyph.plus;
+                    size: 12px;
+                    weight: 2.4;
+                    tint: #111111;
+                }
+
+                plus := TouchArea {
+                    enabled: parent.visible;
+                    clicked => { root.row-add(0); }
+                }
+            }
+
+            // ── the phone's icon column ───────────────────────────────────────
+            //
+            // Fixed at the left and never moving: each row's icon, level with
+            // its row, over a strip the edit slides under.
+            if root.phone: Rectangle {
+                x: 0;
+                y: 0;
+                width: 44px;
+                height: root.height;
+                background: Theme.lane;
+            }
+
             for track in root.tracks: Rectangle {
-                x: Math.max(4px, root.at(0) - 48px);
+                x: 4px;
                 y: root.ruler-height + track.top - root.track-scroll
                     + (track.height - self.height) / 2;
-                width: 40px;
-                height: Math.min(36px, track.height);
+                width: 36px;
+                height: Math.min(32px, track.height);
                 visible: root.phone && track.first && track.height > 0
                     && track.role >= 0 && track.role <= 4
-                    && self.y + self.height > root.ruler-height && self.y < root.height;
+                    && self.y + self.height > 0 && self.y < root.height;
                 border-radius: 8px;
-                background: row-icon.pressed ? Theme.field : Theme.lane;
+                background: row-icon.pressed ? Theme.field : Colors.transparent;
 
                 Icon {
                     x: (parent.width - self.width) / 2;
@@ -1263,9 +1383,9 @@ export component Lanes inherits Rectangle {
                         : track.role == 2 ? Glyph.image
                         : track.role == 3 ? Glyph.music
                         : track.muted ? Glyph.volume-off : Glyph.volume;
-                    size: 18px;
+                    size: 16px;
                     weight: 1.7;
-                    tint: track.role == 4 && track.muted ? Theme.fg-dim : Theme.fg;
+                    tint: Theme.fg-muted;
                 }
 
                 row-icon := TouchArea {
@@ -1274,60 +1394,48 @@ export component Lanes inherits Rectangle {
                 }
             }
 
+            // ── the phone's ruler, under the rows ─────────────────────────────
             if root.phone && root.tracks.length > 0: Rectangle {
-                property <TrackData> sound: root.tracks[root.tracks.length - 1];
+                property <TrackData> last: root.tracks[root.tracks.length - 1];
 
-                x: root.at(0) - 48px - 8px - self.width;
-                y: root.ruler-height + self.sound.top - root.track-scroll - 57px;
-                width: 56px;
-                height: 54px;
-                visible: self.x + self.width > 0;
-                border-radius: 6px;
-                border-width: 1px;
-                border-color: Theme.line-strong;
-                background: cover.pressed ? Theme.field : Colors.transparent;
+                x: 44px;
+                y: root.ruler-height + self.last.top + self.last.height - root.track-scroll + 2px;
+                width: root.width - 44px;
+                height: 20px;
+                clip: true;
 
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 3px;
-                    HorizontalLayout {
-                        alignment: center;
-                        Icon { glyph: Glyph.image; size: 15px; tint: Theme.fg-muted; }
+                for step in 64: Rectangle {
+                    property <float> seconds: root.first-tick + step * root.tick;
+
+                    x: root.at(self.seconds) - parent.x;
+                    y: 0;
+                    width: 64px;
+                    height: parent.height;
+                    visible: root.tick > 0 && self.x > -64px && self.x < parent.width;
+
+                    Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: 1px;
+                        height: 5px;
+                        background: Theme.fg-dim;
+                    }
+                    for minor in 4: Rectangle {
+                        x: (minor + 1) * root.tick * root.px-per-second / 5;
+                        y: 0;
+                        width: 1px;
+                        height: 3px;
+                        background: Theme.line-strong;
                     }
                     Text {
-                        text: I18n.t("Cover");
-                        color: Theme.fg-muted;
+                        x: 0;
+                        y: 6px;
+                        text: parent.seconds >= 60 ? Fmt.short-duration(parent.seconds)
+                            : root.tick >= 1 ? "\{Math.round(parent.seconds)}s"
+                            : "\{Fmt.round-to(parent.seconds, 2)}s";
+                        color: Theme.fg-dim;
                         font-size: Theme.fs-xs;
-                        horizontal-alignment: center;
                     }
-                }
-
-                cover := TouchArea {
-                    clicked => { root.scrubbed(0); }
-                }
-            }
-
-            if root.phone && root.duration > 0 && root.tracks.length > 0: Rectangle {
-                property <TrackData> sound: root.tracks[root.tracks.length - 1];
-
-                x: root.at(root.duration) + 10px;
-                y: root.ruler-height + self.sound.top - root.track-scroll - 51px;
-                width: 42px;
-                height: 42px;
-                visible: self.x < root.width;
-                border-radius: 8px;
-                background: more.pressed ? Theme.field-active : Theme.field;
-
-                Icon {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    glyph: Glyph.plus;
-                    size: 20px;
-                    tint: Theme.fg;
-                }
-
-                more := TouchArea {
-                    clicked => { root.row-add(0); }
                 }
             }
 
@@ -1344,25 +1452,13 @@ export component Lanes inherits Rectangle {
 
                 Rectangle {
                     x: (parent.width - self.width) / 2;
-                    y: root.ruler-height - 2px;
+                    y: 0;
                     width: 2px;
-                    height: parent.height - root.ruler-height - 12px;
+                    height: parent.height - 18px;
                     border-radius: 1px;
                     background: #ffffff;
                     drop-shadow-blur: 3px;
                     drop-shadow-color: #00000080;
-                }
-
-                Path {
-                    x: (parent.width - self.width) / 2;
-                    y: root.ruler-height - 9px;
-                    width: 12px;
-                    height: 8px;
-                    viewbox-width: 1;
-                    viewbox-height: 1;
-                    fit: fill;
-                    fill: #ffffff;
-                    commands: "M 0 0 L 1 0 L 0.5 1 Z";
                 }
 
                 knob := Rectangle {
