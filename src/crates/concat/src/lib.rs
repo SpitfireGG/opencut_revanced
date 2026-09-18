@@ -1269,16 +1269,15 @@ pub fn run() -> Result<(), slint::PlatformError> {
                                 })
                             });
                         }
-                        // The phone's home screen: a fresh project, then the
-                        // gallery, then the picks on its timeline.
+                        // The phone's home screen: a fresh project, then its
+                        // media library — the page VN lands on, instead of
+                        // the system picker reaching straight in. The library
+                        // page's own Import button opens the picker.
                         "new-from-gallery" => {
                             state.quick_project();
                             if !state.on_start {
-                                platform::pick_media_async(&i18n::t("Import media"), |paths| {
-                                    on_ui(move |studio, _, _| {
-                                        studio.import_placed(paths, studio::Placement::Main)
-                                    })
-                                });
+                                app.global::<Editor>()
+                                    .set_library_token(app.global::<Editor>().get_library_token() + 1);
                             }
                         }
                         "export" => {

@@ -67,6 +67,9 @@ export global Editor {
     /// layout watches, since a global's callback is Rust's to answer.
     in-out property <int> add-role;
     in-out property <int> add-token;
+    /// Phone: the home screen's "+" made a fresh project; the phone layout
+    /// opens its media library the next time it shows, the way VN does.
+    in-out property <int> library-token;
 
     // ── highlights ──
     /// The last search's finds, best first.

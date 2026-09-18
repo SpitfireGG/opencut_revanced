@@ -312,6 +312,20 @@ export component PhoneEditor inherits Rectangle {
     changed back-token => { root.back(); }
     init => { Editor.back-consumable = root.can-back; }
 
+    // The home screen's "+": a fresh project, then the library page, the
+    // way VN lands a new edit on its media library. The sheet is open when
+    // the editor appears, so a bump that happened before the first render
+    // is seen here; later bumps arrive through the changed callback.
+    property <bool> library-was-opened: false;
+    changed Editor.library-token => { root.library-was-opened = true; }
+    init => { root.library-was-opened = true; }
+    changed library-was-opened => {
+        if (root.library-was-opened && Editor.library-token > 0) {
+            root.library-page = 0;
+            root.open("library", "media", I18n.t("Media library"));
+        }
+    }
+
     // A clip sheet is about the selection; when the selection goes, so does
     // the sheet, rather than showing the project's details in its place.
     changed has-clip => {
