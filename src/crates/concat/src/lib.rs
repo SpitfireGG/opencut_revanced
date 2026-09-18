@@ -373,6 +373,11 @@ pub fn run() -> Result<(), slint::PlatformError> {
         // whichever is showing.
         state.set_compact(width < studio::COMPACT_WIDTH);
     }));
+    // The phone layout's switch, from the window itself: a phone never
+    // builds the workspace above, so this is how Rust learns it is one.
+    editor.on_layout_changed(on_window!(|state, compact: bool| {
+        state.set_compact(compact);
+    }));
     editor.on_dock_set(on_dock!(|state, seat: i32, kind: PaneKind| {
         let Some(path) = state.dock.leaf_path(seat.max(0) as usize) else {
             return;
@@ -1437,6 +1442,11 @@ pub fn run() -> Result<(), slint::PlatformError> {
     });
 
     {
+        // The window measured itself while it was being built, before any
+        // handler was listening; the layout it chose is read back here. A
+        // phone is always the phone layout.
+        let compact = app.global::<Editor>().get_compact() || cfg!(target_os = "android");
+        shell.studio.borrow_mut().set_compact(compact);
         shell.studio.borrow_mut().refresh_art();
         shell.studio.borrow().publish(&app, &shell.models);
     }
