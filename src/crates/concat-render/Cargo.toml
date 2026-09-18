@@ -17,6 +17,13 @@ gpu = ["dep:wgpu", "dep:pollster"]
 # does everything built on it (cargo-auditable, hence the Nix package).
 wgpu = ["gpu"]
 
+# The phone render-path benchmark: headless, synthetic layers, no media.
+# See examples/phone-render-bench.rs.
+[[example]]
+name = "phone-render-bench"
+path = "examples/phone-render-bench.rs"
+required-features = ["gpu"]
+
 [dependencies]
 concat-core.workspace = true
 wgpu = { workspace = true, optional = true }
