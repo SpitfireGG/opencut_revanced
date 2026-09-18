@@ -987,9 +987,36 @@ export component Lanes inherits Rectangle {
                     vertical-alignment: center;
                 }
 
+                // A drag here scrolls the timeline as anywhere else does; a
+                // tap on an empty row adds to it.
                 add-row := TouchArea {
-                    enabled: parent.visible && track.empty;
-                    clicked => { root.row-add(track.role); }
+                    enabled: parent.visible;
+                    property <length> from-x;
+                    property <length> from-y;
+                    property <bool> travelled;
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down) {
+                            self.from-x = self.absolute-position.x + self.mouse-x;
+                            self.from-y = self.absolute-position.y + self.mouse-y;
+                            self.travelled = false;
+                            root.pan-start();
+                        } else if (event.kind == PointerEventKind.up) {
+                            if (!self.travelled && track.empty) {
+                                root.row-add(track.role);
+                            }
+                        }
+                    }
+                    moved => {
+                        if (self.pressed) {
+                            if (Math.abs(self.absolute-position.x + self.mouse-x - self.from-x) > 8px) {
+                                self.travelled = true;
+                            }
+                            if (self.travelled) {
+                                root.pan(self.absolute-position.x + self.mouse-x - self.from-x,
+                                    self.absolute-position.y + self.mouse-y - self.from-y);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1465,16 +1492,17 @@ export component Lanes inherits Rectangle {
                     x: (parent.width - self.width) / 2;
                     y: 0;
                     width: 2px;
-                    height: parent.height - 18px;
+                    height: parent.height;
                     border-radius: 1px;
                     background: #ffffff;
                     drop-shadow-blur: 3px;
                     drop-shadow-color: #00000080;
                 }
 
+                // In the gap above the rows, clear of every row.
                 knob := Rectangle {
                     x: (parent.width - self.width) / 2;
-                    y: parent.height - self.height - 2px;
+                    y: 2px;
                     width: 22px;
                     height: 14px;
                     border-radius: 7px;
@@ -1498,9 +1526,9 @@ export component Lanes inherits Rectangle {
 
                 jog := TouchArea {
                     x: knob.x - 10px;
-                    y: knob.y - 14px;
+                    y: 0;
                     width: knob.width + 20px;
-                    height: knob.height + 16px;
+                    height: knob.height + 8px;
                     property <float> from-time;
                     property <length> from-x;
                     pointer-event(event) => {

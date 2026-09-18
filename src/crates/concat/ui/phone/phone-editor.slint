@@ -499,7 +499,10 @@ export component PhoneEditor inherits Rectangle {
     /// stays on the screen.
     property <length> timeline-room: root.height - root.bar-h - root.transport-h
         - root.grip-h - root.strip-h - root.tools-h - 140px;
-    property <length> timeline-h: Math.max(96px,
+    /// Never shorter than its rows - the four parts, the footage's sound
+    /// and the ruler under them - and never so tall the picture goes.
+    property <length> rows-h: 262px;
+    property <length> timeline-h: Math.max(Math.min(root.rows-h, root.timeline-room),
         Math.min(root.timeline-room, root.height * root.timeline-share));
     property <length> lower-h: root.full ? 0px
         : root.grip-h + root.timeline-h + root.strip-h + root.tools-h;
@@ -622,6 +625,7 @@ export component PhoneEditor inherits Rectangle {
 
         HorizontalLayout {
             x: 14px;
+            width: self.preferred-width;
             height: parent.height;
             spacing: 4px;
 

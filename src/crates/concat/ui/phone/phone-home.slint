@@ -164,7 +164,13 @@ export component PhoneHome inherits Rectangle {
     property <length> pad: 20px;
     property <bool> any: root.recents.length > 0;
 
+    // Placed outright: left to the layout, the list's own height would
+    // become the whole screen's, and the + would sit under the card.
     Flickable {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
         viewport-height: page.preferred-height + 120px;
 
         page := VerticalLayout {
