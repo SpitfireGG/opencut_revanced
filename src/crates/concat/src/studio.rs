@@ -97,6 +97,16 @@ pub const ROLE_SPARE: u8 = 4;
 /// plays on a phone: the words over the overlays over the footage.
 const STANDARD_LANES: [u8; 4] = [ROLE_FOOTAGE, ROLE_OVERLAY, ROLE_WORDS, ROLE_SOUND];
 
+/// A phone row's height by its part: the footage tall enough for its
+/// frames, the rest a slim bar with room between them; a spare lane none.
+fn phone_row_height(role: u8) -> f32 {
+    match role {
+        ROLE_FOOTAGE => 64.0,
+        ROLE_WORDS | ROLE_OVERLAY | ROLE_SOUND => 38.0,
+        _ => 0.0,
+    }
+}
+
 /// Where a part's row sits on a phone, top first, as VN stacks them: the
 /// music, the words, the overlays, then the footage over its own sound.
 fn role_rank(role: u8) -> u8 {
@@ -1781,7 +1791,17 @@ impl Studio {
         if !self.compact {
             return tier;
         }
-        tier.min(960.0 / f64::from(width.max(height).max(1)))
+        // Smaller while it moves: a frame a finger is dragging or that is
+        // playing is on screen for a sixtieth of a second, and the sharp
+        // one comes the moment it stops.
+        let long = if self.echo.is_some() {
+            540.0
+        } else if self.playing {
+            720.0
+        } else {
+            960.0
+        };
+        tier.min(long / f64::from(width.max(height).max(1)))
     }
 
     /// The footage's sound is off: every video on the footage row is at
@@ -1934,19 +1954,6 @@ impl Studio {
     /// thing on it, without the lanes having to be typed. An empty one takes
     /// the middle size.
     fn lane_height(&self, lane: &Track) -> f32 {
-        if self.compact {
-            let roles = self.lane_roles();
-            let index = self
-                .timeline()
-                .tracks
-                .iter()
-                .position(|held| held.id == lane.id);
-            return match index.map(|index| roles[index]) {
-                Some(ROLE_FOOTAGE) => 60.0,
-                Some(ROLE_WORDS | ROLE_SOUND | ROLE_OVERLAY) => 32.0,
-                _ => 0.0,
-            };
-        }
         match self.lane_size(&lane.id) {
             TrackSize::Small => LANE_SMALL,
             TrackSize::Medium => LANE_MEDIUM,
@@ -1973,9 +1980,13 @@ impl Studio {
     /// Every lane's height, top-most first.
     pub fn lane_heights(&self) -> Vec<f32> {
         let tracks = &self.timeline().tracks;
+        let roles = self.compact.then(|| self.lane_roles());
         self.row_order()
             .into_iter()
-            .map(|index| self.lane_height(&tracks[index]))
+            .map(|index| match &roles {
+                Some(roles) => phone_row_height(roles[index]),
+                None => self.lane_height(&tracks[index]),
+            })
             .collect()
     }
 
@@ -2377,7 +2388,7 @@ impl Studio {
         let monitor = self.host.monitor.clone();
         self.preview_busy = true;
         self.preview_wanted = false;
-        spawn(
+        crate::host::spawn_quiet(
             move || {
                 // On the window's device the frame stays a texture; without
                 // one it comes back as pixels and is uploaded here.
@@ -2402,7 +2413,7 @@ impl Studio {
                 }
                 frame
             },
-            move |studio, _, _, result| {
+            move |studio, app, models, result| {
                 studio.preview_busy = false;
                 let picture = match result {
                     // Drawn here and not on the worker: this is the event
@@ -2427,13 +2438,22 @@ impl Studio {
                     Err(error) => Err(error),
                 };
                 match picture {
-                    Ok(image) => studio.preview = image,
+                    Ok(image) => {
+                        studio.preview = image;
+                        // The frame, and the boxes over it - which a title
+                        // painted for this frame may have resized. Nothing
+                        // else in the window changed.
+                        app.global::<Editor>()
+                            .set_preview_frame(studio.preview.clone());
+                        sync(&models.stage, studio.stage_items());
+                    }
                     Err(error) => {
                         log::warn!("preview: {error}");
                         if !studio.preview_failed {
                             studio.preview_failed = true;
                             studio.notify(&tf("Preview failed: {0}", &[&error]), true);
                         }
+                        studio.publish(app, models);
                     }
                 }
                 if studio.preview_wanted {
@@ -2469,18 +2489,29 @@ impl Studio {
             std::time::Duration::from_millis(16),
             || {
                 crate::host::Shell::with(|shell, app| {
-                    {
+                    let ended = {
                         let mut studio = shell.studio.borrow_mut();
                         let end = studio.duration();
                         let position = studio.host.playback.position() as f32;
                         studio.playhead = position.min(end);
                         if position >= end {
                             studio.pause();
+                            true
                         } else {
                             studio.request_preview();
+                            false
                         }
+                    };
+                    // While it plays only the playhead moves; the rows and
+                    // clips are as they were, and rebuilding them sixty
+                    // times a second is what made the phone stutter.
+                    let studio = shell.studio.borrow();
+                    if ended {
+                        studio.publish(&app, &shell.models);
+                    } else {
+                        app.global::<Editor>().set_playhead(studio.playhead);
+                        sync(&shell.models.stage, studio.stage_items());
                     }
-                    shell.studio.borrow().publish_lanes(&app, &shell.models);
                 });
             },
         );
@@ -2498,8 +2529,7 @@ impl Studio {
     /// last clip and something placed at the playhead there.
     pub fn seek(&mut self, seconds: f32) {
         self.playhead = seconds.max(0.0);
-        // A phone's timeline is exactly as long as the edit.
-        if self.prefs.playhead_stops_at_end || self.compact {
+        if self.prefs.playhead_stops_at_end {
             self.playhead = self.playhead.min(self.duration().max(0.0));
         }
         self.host.playback.seek(f64::from(self.playhead));
@@ -6683,6 +6713,19 @@ impl Studio {
 
     /// The timeline and the readouts that follow it: what runs on every
     /// event of a scrub, a drag, a trim or a knob.
+    /// What a finger in motion changes: the playhead, the boxes and guides
+    /// over the monitor, and a brush stroke. See `on_moving` in lib.rs.
+    pub fn publish_moving(&self, app: &App, models: &Models) {
+        let editor = app.global::<Editor>();
+        editor.set_playhead(self.playhead);
+        sync(&models.stage, self.stage_items());
+        sync(&models.guides, self.stage_guides.clone());
+        let (path, width, erase) = self.stroke_overlay();
+        editor.set_stroke_path(path.into());
+        editor.set_stroke_width(width);
+        editor.set_stroke_erase(erase);
+    }
+
     pub fn publish_lanes(&self, app: &App, models: &Models) {
         let editor = app.global::<Editor>();
         let project = self.project();
@@ -6707,7 +6750,11 @@ impl Studio {
         let (mut part, mut part_h) = (None, 0.0_f32);
         for index in self.row_order() {
             let lane = &timeline.tracks[index];
-            let height = self.lane_height(lane);
+            let height = if self.compact {
+                phone_row_height(roles[index])
+            } else {
+                self.lane_height(lane)
+            };
             let role = if self.compact {
                 roles[index]
             } else {

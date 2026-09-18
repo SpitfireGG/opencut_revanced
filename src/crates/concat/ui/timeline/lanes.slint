@@ -149,6 +149,10 @@ component Clip inherits Rectangle {
     callback edge-tapped(edge: int);
     /// Phone: the clip tapped, not dragged: its quick actions come up.
     callback tapped();
+    /// The part of the clip on screen, in its own coordinates, so only the
+    /// frames there are drawn.
+    in property <length> view-from: 0px;
+    in property <length> view-to: 100000px;
 
     property <color> mark: Paint.mark(root.item.kind);
     property <color> well: Paint.well(root.item.kind);
@@ -260,6 +264,11 @@ component Clip inherits Rectangle {
             property <length> tile-w: Math.max(4px,
                 parent.height * root.item.strip.frame-width / Math.max(1, root.item.strip.height));
             property <int> tiles: Math.min(400, Math.ceil(parent.width / self.tile-w));
+            /// Only the tiles on screen are built: a long clip zoomed in is
+            /// hundreds of frames wide, and all but a dozen are off it.
+            property <int> first: Math.max(0, Math.floor(root.view-from / self.tile-w));
+            property <int> shown: Math.max(0, Math.min(self.tiles - self.first,
+                Math.ceil((root.view-to - root.view-from) / self.tile-w) + 1));
 
             /// The fraction of the clip under the middle of tile `i`'s
             /// visible part.
@@ -268,8 +277,9 @@ component Clip inherits Rectangle {
                     / 2 / Math.max(1px, self.width);
             }
 
-            for i in self.tiles: Image {
-                x: i * parent.tile-w;
+            for n in self.shown: Image {
+                property <int> i: parent.first + n;
+                x: self.i * parent.tile-w;
                 y: 0;
                 width: parent.tile-w;
                 height: parent.height;
@@ -277,7 +287,7 @@ component Clip inherits Rectangle {
                 image-fit: fill;
                 source-clip-x: Math.clamp(
                     Math.floor(root.item.strip.frames
-                        * (root.item.strip.start + root.item.strip.span * parent.at(i))),
+                        * (root.item.strip.start + root.item.strip.span * parent.at(self.i))),
                     0, root.item.strip.frames - 1) * root.item.strip.frame-width;
                 source-clip-y: 0;
                 source-clip-width: root.item.strip.frame-width;
@@ -926,13 +936,15 @@ export component Lanes inherits Rectangle {
                 y: root.ruler-height + track.top - root.track-scroll + 3px;
                 width: Math.max(0px, Math.min(root.width, self.to) - self.x);
                 height: Math.max(0px, track.height - 6px);
-                visible: root.phone && track.role >= 0 && track.role <= 3 && track.height > 0
-                    && self.width > 0 && self.y + self.height > root.ruler-height
-                    && self.y < root.height;
+                // Only an empty row is drawn: a row with clips is its clips,
+                // each exactly as long as it is, and nothing else.
+                visible: root.phone && track.empty && track.role >= 0 && track.role <= 3
+                    && track.height > 0 && self.width > 0
+                    && self.y + self.height > root.ruler-height && self.y < root.height;
                 border-radius: 4px;
                 background: add-row.pressed ? Theme.field-active : Theme.field;
 
-                if track.empty: Text {
+                Text {
                     x: Math.max(10px, -parent.from + 10px);
                     height: parent.height;
                     text: track.role == 0 ? I18n.t("Tap to add video")
@@ -945,7 +957,7 @@ export component Lanes inherits Rectangle {
                 }
 
                 add-row := TouchArea {
-                    enabled: parent.visible && track.empty;
+                    enabled: parent.visible;
                     clicked => { root.row-add(track.role); }
                 }
             }
@@ -984,6 +996,8 @@ export component Lanes inherits Rectangle {
                 tool: root.phone ? TimelineTool.select : root.tool;
                 phone: root.phone;
                 edge-grab: root.phone ? (entry.selected ? 20px : 0px) : 6px;
+                view-from: -self.x;
+                view-to: root.width - self.x;
                 pan-started => { root.pan-start(); }
                 panned(dx, dy) => { root.pan(dx, dy); }
                 edge-tapped(edge) => { root.clip-edge-tapped(entry.id, edge); }

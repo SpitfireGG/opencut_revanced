@@ -1052,9 +1052,11 @@ export component PhoneEditor inherits Rectangle {
         }
     }
 
+    // Over the foot of the picture, never over the rows: a bar laid on the
+    // lanes hid the top row and swallowed the swipe meant for it.
     if root.tip-open: Rectangle {
         x: (root.width - self.width) / 2;
-        y: root.lower-y + 26px;
+        y: root.bar-h + root.monitor-h - self.height - 10px;
         width: quick.preferred-width;
         height: 56px;
         border-radius: 14px;
@@ -1110,7 +1112,7 @@ export component PhoneEditor inherits Rectangle {
     // A tapped handle's offer: run that end of the clip out to its media's.
     if root.tip-open && Editor.edge-chip >= 0: Rectangle {
         x: (root.width - self.width) / 2;
-        y: root.lower-y + 26px + 56px + 8px;
+        y: root.bar-h + root.monitor-h - 56px - 10px - self.height - 8px;
         width: chip.preferred-width;
         height: 40px;
         border-radius: 20px;

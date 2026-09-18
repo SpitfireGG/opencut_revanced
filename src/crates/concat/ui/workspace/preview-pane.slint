@@ -649,15 +649,16 @@ component StageOverlay inherits Rectangle {
             y: zone.y0 * root.height;
             width: (zone.x1 - zone.x0) * root.width;
             height: (zone.y1 - zone.y0) * root.height;
-            background: #00000033;
+            // Faint: a guide to keep words out of, not a second picture.
+            background: #00000014;
             border-width: 1px;
-            border-color: #ffffff66;
+            border-color: #ffffff29;
 
             Text {
                 x: 4px;
                 y: 2px;
                 text: zone.label;
-                color: #ffffffb3;
+                color: #ffffff73;
                 font-size: Theme.fs-xs;
             }
 

@@ -307,6 +307,22 @@ pub fn run() -> Result<(), slint::PlatformError> {
     macro_rules! on_lanes {
         ($($handler:tt)*) => { handler!(publish_lanes, $($handler)*) };
     }
+    // A finger in motion - scrubbing the lanes, dragging or pinching a
+    // picture: only the playhead and the monitor's overlay change, and they
+    // are all that is published, many times a second.
+    macro_rules! on_moving {
+        (|$state:ident $(, $arg:ident : $ty:ty)*| $body:block) => {{
+            move |$($arg : $ty),*| {
+                Shell::with(|shell, app| {
+                    {
+                        let mut $state = shell.studio.borrow_mut();
+                        $body
+                    }
+                    shell.studio.borrow().publish_moving(&app, &shell.models);
+                });
+            }
+        }};
+    }
     macro_rules! on_dock {
         ($($handler:tt)*) => { handler!(publish_dock, $($handler)*) };
     }
@@ -614,7 +630,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
     }));
 
     // ── the view ──
-    editor.on_scrubbed(on_lanes!(|state, seconds: f32| {
+    editor.on_scrubbed(on_moving!(|state, seconds: f32| {
         state.seek(seconds.max(0.0));
     }));
     editor.on_scrolled(on_lanes!(|state, seconds: f32| {
@@ -841,7 +857,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
             state.stage_grip_pressed(id.as_str(), grip, x, y);
         }
     ));
-    editor.on_stage_dragged(on_lanes!(|state, x: f32, y: f32, snap: bool| {
+    editor.on_stage_dragged(on_moving!(|state, x: f32, y: f32, snap: bool| {
         state.stage_dragged(x, y, snap);
     }));
     editor.on_stage_released(on_window!(|state| {
@@ -853,7 +869,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
     editor.on_stage_pinch_started(on_window!(|state| {
         state.stage_pinch_started();
     }));
-    editor.on_stage_pinched(on_window!(|state, factor: f32| {
+    editor.on_stage_pinched(on_moving!(|state, factor: f32| {
         state.stage_pinched(factor);
     }));
 

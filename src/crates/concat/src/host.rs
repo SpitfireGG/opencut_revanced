@@ -180,6 +180,25 @@ pub fn spawn<T: Send + 'static>(
     spawn_detached(move || deliver(work(), then));
 }
 
+/// [`spawn`] for the monitor's frames, which arrive many times a second
+/// while playing or dragging: `then` publishes what it changed itself, and
+/// the rest of the window - every list, every panel - is left alone. A full
+/// publish per frame was most of the phone's lag.
+pub fn spawn_quiet<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+    then: impl FnOnce(&mut Studio, &App, &Models, T) + Send + 'static,
+) {
+    spawn_detached(move || {
+        let result = work();
+        let _ = slint::invoke_from_event_loop(move || {
+            Shell::with(|shell, app| {
+                let mut studio = shell.studio.borrow_mut();
+                then(&mut studio, &app, &shell.models, result);
+            });
+        });
+    });
+}
+
 /// Hands a worker's result to the event-loop thread: `then` with the state
 /// and the window, and a full publish after it.
 fn deliver<T: Send + 'static>(
