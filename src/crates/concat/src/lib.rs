@@ -91,7 +91,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
         });
     })?;
 
-    let host = match Host::start(gpu) {
+    // Android's window takes the device only once it exists; kept for then.
+    #[cfg(target_os = "android")]
+    let shared = gpu.as_ref().map(gpu::Gpu::configuration);
+
+    #[cfg_attr(not(target_os = "android"), allow(unused_mut))]
+    let mut host = match Host::start(gpu) {
         Ok(host) => host,
         Err(error) => {
             log::error!("{error}");
@@ -106,6 +111,21 @@ pub fn run() -> Result<(), slint::PlatformError> {
     }
 
     let app = App::new()?;
+
+    // The window now exists, so Android's backend can be handed the device
+    // the monitor composites on: one device, and a frame is a texture the
+    // window draws as it is. Refused, the monitor goes back to compositing
+    // on the CPU - its textures would be another device's.
+    #[cfg(target_os = "android")]
+    if let Some(configuration) = shared {
+        if let Err(error) = slint::BackendSelector::new()
+            .require_wgpu_29(configuration)
+            .select()
+        {
+            log::warn!("preview: the window refused the shared device ({error}); CPU instead");
+            host.monitor = concat_host::preview::Monitor::new();
+        }
+    }
 
     let studio = Studio::new(host);
     let dark = studio.prefs.dark.unwrap_or(true);

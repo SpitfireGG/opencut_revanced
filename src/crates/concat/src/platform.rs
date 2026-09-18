@@ -145,18 +145,28 @@ pub fn is_maximized(window: &slint::Window) -> bool {
     }
 }
 
-/// On Android the activity installed the backend before calling in, and
-/// that backend draws on a device of its own; the monitor composites on the
-/// CPU and hands the renderer finished pixels. Android has no OS drag to
-/// wire up - a file arrives through the document picker instead - so
-/// `on_files_dropped` is taken only to keep the signature the same as the
-/// desktop's and is never called.
+/// On Android the activity installed the backend before calling in. The
+/// shared device is opened here all the same - the monitor composites on it,
+/// as on the desktop, and a frame is a texture the window samples instead of
+/// pixels the CPU blended - and `run` hands it to the window once the window
+/// exists. Android has no OS drag to wire up - a file arrives through the
+/// picker instead - so `on_files_dropped` is taken only to keep the
+/// signature the same as the desktop's and is never called.
 #[cfg(target_os = "android")]
 pub fn select_backend(
     on_files_dropped: impl Fn(Vec<PathBuf>) + 'static,
 ) -> Result<Option<Gpu>, PlatformError> {
     let _ = on_files_dropped;
-    Ok(None)
+    let gpu = Gpu::acquire();
+    log::info!(
+        "preview: {}",
+        if gpu.is_some() {
+            "composited on the GPU"
+        } else {
+            "no GPU device; composited on the CPU"
+        }
+    );
+    Ok(gpu)
 }
 
 /// Starts a window drag from the title strip.
