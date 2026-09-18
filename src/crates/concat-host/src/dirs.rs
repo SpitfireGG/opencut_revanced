@@ -36,46 +36,26 @@ impl AppDirs {
         if let Some(portable) = portable_root() {
             return Ok(AppDirs::under(&portable));
         }
-        if cfg!(target_os = "macos") {
-            let dir = home()?
-                .join("Library")
-                .join("Application Support")
-                .join(IDENTIFIER);
-            Ok(AppDirs {
-                config: dir.clone(),
-                data: dir,
-            })
-        } else if cfg!(windows) {
-            let dir = std::env::var_os("APPDATA")
+        // Linux follows the XDG split. Android arrives here too: the
+        // activity names both bases before the window starts, since an
+        // app process there has no home directory to derive them from.
+        let base = |variable: &str| {
+            std::env::var_os(variable)
                 .map(PathBuf::from)
-                .ok_or_else(|| "APPDATA is not set".to_owned())?
-                .join(IDENTIFIER);
-            Ok(AppDirs {
-                config: dir.clone(),
-                data: dir,
-            })
-        } else {
-            // Linux follows the XDG split. Android arrives here too: the
-            // activity names both bases before the window starts, since an
-            // app process there has no home directory to derive them from.
-            let base = |variable: &str| {
-                std::env::var_os(variable)
-                    .map(PathBuf::from)
-                    .filter(|path| path.is_absolute())
-            };
-            let config_base = match base("XDG_CONFIG_HOME") {
-                Some(path) => path,
-                None => home()?.join(".config"),
-            };
-            let data_base = match base("XDG_DATA_HOME") {
-                Some(path) => path,
-                None => home()?.join(".local").join("share"),
-            };
-            Ok(AppDirs {
-                config: config_base.join(IDENTIFIER),
-                data: data_base.join(IDENTIFIER),
-            })
-        }
+                .filter(|path| path.is_absolute())
+        };
+        let config_base = match base("XDG_CONFIG_HOME") {
+            Some(path) => path,
+            None => home()?.join(".config"),
+        };
+        let data_base = match base("XDG_DATA_HOME") {
+            Some(path) => path,
+            None => home()?.join(".local").join("share"),
+        };
+        Ok(AppDirs {
+            config: config_base.join(IDENTIFIER),
+            data: data_base.join(IDENTIFIER),
+        })
     }
 
     /// Both directories under one root. For tests, and for anyone running

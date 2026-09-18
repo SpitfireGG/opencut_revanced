@@ -3,7 +3,6 @@
 # libraries k2-fsa publishes, which the app carries with it.
 #
 #   scripts/sherpa-mobile.sh aarch64-linux-android [out-dir]
-#   scripts/sherpa-mobile.sh aarch64-apple-ios     [out-dir]
 #
 # The version is the one the lockfile resolved for sherpa-onnx-sys, so a
 # bump of the crate cannot desynchronise from the libraries.
@@ -13,12 +12,9 @@
 # them because onnxruntime loads it. Point SHERPA_ONNX_LIB_DIR at the ABI
 # directory to build, and cargo-apk packages the whole tree through
 # concat-android's manifest.
-#
-# iOS: vendor/sherpa-onnx/ios/sherpa-onnx.xcframework, the framework the
-# app bundle embeds; SHERPA_ONNX_LIB_DIR is its device slice.
 set -euo pipefail
 
-target=${1:?target triple: aarch64-linux-android or aarch64-apple-ios}
+target=${1:?target triple: aarch64-linux-android}
 workspace=$(cd "$(dirname "$0")/.." && pwd)
 version=$(grep -A1 'name = "sherpa-onnx-sys"' "$workspace/Cargo.lock" | sed -n 's/^version = "\(.*\)"/\1/p')
 release=https://github.com/k2-fsa/sherpa-onnx/releases/download
@@ -48,24 +44,6 @@ case "$target" in
       "$out/jniLibs/arm64-v8a/"
     echo "sherpa-onnx for Android is in $out/jniLibs"
     echo "  export SHERPA_ONNX_LIB_DIR=$out/jniLibs/arm64-v8a"
-    ;;
-  aarch64-apple-ios)
-    out=${2:-$workspace/vendor/sherpa-onnx/ios}
-    echo "Fetching sherpa-onnx $version for iOS"
-    mkdir -p "$out"
-    curl -fsSL --retry 5 --retry-all-errors -o "$out/sherpa-onnx-ios.zip" \
-      "$release/xcframework/sherpa-onnx-v$version-ios-shared-onnxruntime-static.xcframework.zip"
-    (cd "$out" && unzip -qo sherpa-onnx-ios.zip && rm sherpa-onnx-ios.zip)
-    framework=$(find "$out" -maxdepth 2 -name '*.xcframework' | head -1)
-    [ -n "$framework" ] || { echo "no xcframework in the archive" >&2; exit 1; }
-    binary=$framework/ios-arm64/SherpaOnnxC.framework/SherpaOnnxC
-    [ -f "$binary" ] || { echo "no device slice in $framework" >&2; exit 1; }
-    # The linker looks for the library by its lib-prefixed name; the
-    # framework carries the dylib under the framework's own.
-    mkdir -p "$out/lib"
-    ln -sf "$binary" "$out/lib/libsherpa-onnx-c-api.dylib"
-    echo "sherpa-onnx for iOS is $framework"
-    echo "  export SHERPA_ONNX_LIB_DIR=$out/lib"
     ;;
   *)
     echo "unknown target $target" >&2; exit 1 ;;

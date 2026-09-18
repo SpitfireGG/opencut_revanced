@@ -6,31 +6,6 @@
 use crate::i18n::t;
 
 pub fn os_description() -> String {
-    #[cfg(target_os = "macos")]
-    {
-        // Bare `sw_vers` prints all three lines at once, so this is one
-        // process rather than the three the flags would cost.
-        let fields = std::process::Command::new("sw_vers")
-            .output()
-            .ok()
-            .filter(|out| out.status.success())
-            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
-            .unwrap_or_default();
-        let field = |key: &str| {
-            fields
-                .lines()
-                .find_map(|line| line.strip_prefix(key)?.split(':').nth(1))
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        };
-        let name = field("ProductName").unwrap_or_else(|| "macOS".into());
-        match (field("ProductVersion"), field("BuildVersion")) {
-            (Some(version), Some(build)) => format!("{name} {version} ({build})"),
-            (Some(version), None) => format!("{name} {version}"),
-            _ => name,
-        }
-    }
     #[cfg(target_os = "linux")]
     {
         // The distribution's own name for itself, which is what a report
@@ -46,18 +21,7 @@ pub fn os_description() -> String {
             .filter(|value| !value.is_empty());
         pretty.unwrap_or_else(|| "Linux".into())
     }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("cmd")
-            .args(["/c", "ver"])
-            .output()
-            .ok()
-            .filter(|out| out.status.success())
-            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "Windows".into())
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[cfg(not(target_os = "linux"))]
     {
         std::env::consts::OS.to_owned()
     }

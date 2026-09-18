@@ -79,22 +79,17 @@ impl VideoCodec {
         }
     }
 
-    /// The FFmpeg encoders that make this codec, best first. With
-    /// `hardware`, the platform's own encoder leads where there is one
-    /// worth leading with: VideoToolbox for HEVC on macOS, which is many
-    /// times faster than x265 and, at these rates, as good to look at.
-    /// H.264 stays with x264 everywhere: the hardware H.264 encoders
-    /// spend noticeably more bits for the same picture, and H.264 is the
-    /// choice made for compatibility, not speed.
+    /// The FFmpeg encoders that make this codec, best first: the software
+    /// encoder where the linked FFmpeg has one (the Linux development
+    /// build), else the phone's MediaCodec. `hardware` is kept for callers;
+    /// the phone's build carries nothing else to choose.
     pub fn encoders(self, hardware: bool) -> &'static [&'static str] {
+        let _ = hardware;
         match self {
             // A phone's build carries no x264: its silicon is the encoder.
             VideoCodec::H264 if cfg!(target_os = "android") => &["libx264", "h264_mediacodec"],
             VideoCodec::Hevc if cfg!(target_os = "android") => &["libx265", "hevc_mediacodec"],
             VideoCodec::H264 => &["libx264"],
-            VideoCodec::Hevc if hardware && cfg!(target_os = "macos") => {
-                &["hevc_videotoolbox", "libx265"]
-            }
             VideoCodec::Hevc => &["libx265"],
             VideoCodec::Av1 => &["libsvtav1", "libaom-av1"],
         }
@@ -174,13 +169,6 @@ fn svt_preset(preset: &str) -> u8 {
         .iter()
         .position(|name| *name == preset)
         .map_or(6, |index| SVT[index])
-}
-
-/// VideoToolbox's quality, 1 to 100 with 100 the best, for an x264 CRF:
-/// 16 lands at 65 and 26 at 43, which is where the files come out about
-/// the size x264 makes them.
-fn videotoolbox_quality(crf: u8) -> u8 {
-    (100.0 - f32::from(crf) * 2.2).round().clamp(1.0, 100.0) as u8
 }
 
 /// A four-character code as the muxer stores it.
@@ -268,15 +256,11 @@ impl Encoder {
                 what: "encoder",
                 name: options.codec.label().to_owned(),
             })?;
-        let videotoolbox = encoder_name.ends_with("_videotoolbox");
         let mediacodec = encoder_name.ends_with("_mediacodec");
-        // VideoToolbox takes its pictures planar-chroma; the software
-        // encoders take the planar 4:2:0 they all read. MediaCodec takes
-        // NV12, and eight bits only.
-        let pixel_format = match (videotoolbox, options.ten_bit) {
-            _ if mediacodec => Pixel::NV12,
-            (true, true) => Pixel::P010LE,
-            (true, false) => Pixel::NV12,
+        // The software encoders take the planar 4:2:0 they all read;
+        // MediaCodec takes NV12, and eight bits only.
+        let pixel_format = match (mediacodec, options.ten_bit) {
+            (true, _) => Pixel::NV12,
             (false, true) => Pixel::YUV420P10LE,
             (false, false) => Pixel::YUV420P,
         };
@@ -337,12 +321,6 @@ impl Encoder {
             "libaom-av1" => ffmpeg::dict! {
                 "crf" => &options.crf.saturating_add(8).min(63).to_string(),
                 "cpu-used" => "6",
-            },
-            "hevc_videotoolbox" => ffmpeg::dict! {
-                "q:v" => &videotoolbox_quality(options.crf).to_string(),
-                "profile" => if options.ten_bit { "main10" } else { "main" },
-                // A machine without the hardware still gets a file.
-                "allow_sw" => "1",
             },
             _ => ffmpeg::dict! {},
         };
@@ -419,7 +397,7 @@ impl Encoder {
         })
     }
 
-    /// Which FFmpeg encoder is doing the work, e.g. "hevc_videotoolbox".
+    /// Which FFmpeg encoder is doing the work, e.g. "h264_mediacodec".
     pub fn encoder_name(&self) -> &'static str {
         self.encoder_name
     }
@@ -602,8 +580,6 @@ mod tests {
         assert_eq!(svt_preset("medium"), 6);
         assert_eq!(svt_preset("veryfast"), 10);
         assert_eq!(svt_preset("nonsense"), 6);
-        assert_eq!(videotoolbox_quality(16), 65);
-        assert_eq!(videotoolbox_quality(26), 43);
         assert_eq!(fourcc(*b"hvc1"), 0x3163_7668);
     }
 

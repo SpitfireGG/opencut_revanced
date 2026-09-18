@@ -132,7 +132,6 @@ export component App inherits Window {
     // the library callbacks above.
     in property <string> project-name: I18n.t("Untitled project");
     in property <string> project-status: I18n.t("saved");
-    in property <bool> macos;
 
     /// The File / Edit / View menus. Built in Rust like every other menu here,
     /// because what belongs on them depends on the project.
@@ -411,7 +410,6 @@ export component App inherits Window {
 
             // The phone's screens carry their own bars.
             if !Editor.compact: TitleBar {
-                macos: root.macos;
                 minimal: root.on-start;
                 project-name: root.project-name;
                 status: root.project-status;

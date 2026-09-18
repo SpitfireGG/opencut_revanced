@@ -3,20 +3,20 @@
 
 //! What the window asks of the platform it runs on.
 //!
-//! Four things differ between a desk and a phone: how the backend is
-//! chosen, how a file or folder is picked, whether the window has a title
-//! strip of its own to drag, and whether a file dragged in from outside the
-//! window is even a thing that can happen. Everything else in the crate is
-//! the same tree, the same state and the same callbacks, so the differences
-//! live here and nowhere else.
+//! Concat ships on Android. The Linux desktop build is kept for
+//! development - the tests run on it, and at phone width it shows the phone
+//! layout in seconds - and it differs from the phone in four things: how the
+//! backend is chosen, how a file or folder is picked, whether the window
+//! has a title strip of its own to drag, and whether a file dragged in from
+//! outside the window can happen. Everything else in the crate is the same
+//! tree, the same state and the same callbacks, so the differences live
+//! here and nowhere else.
 //!
-//! Desktop and iOS draw through the winit backend; Android through Slint's
+//! Linux draws through the winit backend; Android through Slint's
 //! android-activity backend, which the activity sets up before [`crate::run`]
-//! is called. File dialogs are the desktop's: on a phone a pick goes through
-//! the system's document picker, which arrives with the phone layout. A drag
-//! in from the OS is a desktop thing for the same reason: winit only reports
-//! `DroppedFile` on macOS, Windows and X11 - not Wayland, which has no such
-//! event as of this winit, and not iOS, which has no such gesture.
+//! is called. File dialogs are Linux's: on the phone a pick goes through
+//! the system's picker. A drag in from outside is Linux's too, and X11's
+//! only: winit reports no `DroppedFile` on Wayland.
 
 use std::path::PathBuf;
 
@@ -79,15 +79,12 @@ impl CustomApplicationHandler for DropHandler {
     }
 }
 
-/// Whether the window draws the macOS traffic lights over its own strip.
-pub const MACOS: bool = cfg!(target_os = "macos");
-
 /// Chooses and installs the backend, and hands back the device the
 /// renderer and the engine's compositor share, when there is one.
 ///
 /// `on_files_dropped` fires on the event-loop thread with the paths of a
-/// file (or several) dragged in from outside the window - Finder, Explorer,
-/// a file manager - batched into one call per drag. It is taken here,
+/// file (or several) dragged in from outside the window - a file manager -
+/// batched into one call per drag. It is taken here,
 /// before the window exists, because the backend - and the hook into its
 /// event loop that OS drops arrive through - has to be selected before
 /// anything is built on top of it; see [`DropHandler`].
@@ -107,71 +104,16 @@ pub fn select_backend(
         .with_winit_custom_application_handler(DropHandler::new(on_files_dropped));
     selector = match &gpu {
         Some(gpu) => selector.require_wgpu_29(gpu.configuration()),
-        None => {
-            // Without a shared device, ask for the platform's own API by
-            // name: Skia picks its surface from a cfg chain, and requiring
-            // one turns a silent fall back to the CPU rasteriser into a
-            // refusal to start, which is a fault you can see.
-            #[cfg(target_vendor = "apple")]
-            {
-                selector.require_metal()
-            }
-            #[cfg(target_family = "windows")]
-            {
-                selector.require_d3d()
-            }
-            #[cfg(not(any(target_vendor = "apple", target_family = "windows")))]
-            {
-                selector
-            }
-        }
+        None => selector,
     };
 
-    // The custom title bar. The window draws its own strip, so the
-    // platform's is not wanted - but each platform is asked in its own way.
-    //
-    // macOS keeps the real title bar and makes it invisible: transparent,
-    // untitled, with the content view under it. That is what keeps the
-    // traffic lights, which are the window's and not ours to draw, and the
-    // strip leaves 80px for them (title-bar.slint).
-    //
-    // Everywhere else the decorations go entirely and the strip carries its
-    // own minimise, maximise and close. On Windows winit keeps WS_SIZEBOX
-    // when the caption goes, so the edges still resize, and the undecorated
-    // shadow keeps the DWM drop shadow the caption would otherwise have
-    // taken with it.
-    #[cfg(target_os = "macos")]
-    {
-        use slint::winit_030::winit::platform::macos::WindowAttributesExtMacOS;
-        selector = selector.with_winit_window_attributes_hook(|attributes| {
-            attributes
-                .with_titlebar_transparent(true)
-                .with_title_hidden(true)
-                .with_fullsize_content_view(true)
-        });
-    }
-    #[cfg(target_os = "windows")]
-    {
-        use slint::winit_030::winit::platform::windows::WindowAttributesExtWindows;
-        selector = selector.with_winit_window_attributes_hook(|attributes| {
-            attributes
-                .with_decorations(false)
-                .with_undecorated_shadow(true)
-        });
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "android")))]
-    {
-        selector = selector
-            .with_winit_window_attributes_hook(|attributes| attributes.with_decorations(false));
-    }
+    // The custom title bar: the window draws its own strip, with its own
+    // minimise, maximise and close, so the platform's decorations go.
+    selector =
+        selector.with_winit_window_attributes_hook(|attributes| attributes.with_decorations(false));
     selector.select()?;
     Ok(gpu)
 }
-
-/// Whether the strip should draw its own window buttons: everywhere the
-/// platform's decorations were taken off, which is everywhere but macOS,
-/// where the traffic lights stay the window's.
-pub const OWN_WINDOW_BUTTONS: bool = !MACOS;
 
 /// Minimises the window: the strip's first button.
 pub fn minimize(window: &slint::Window) {
@@ -245,7 +187,7 @@ pub fn toggle_maximize(window: &slint::Window) {
 
 /// Asks for a folder, starting at `start` when there is one.
 pub fn pick_folder(title: &str, start: &str) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "android"))]
     {
         let mut dialog = rfd::FileDialog::new().set_title(title);
         if !start.is_empty() {
@@ -253,7 +195,7 @@ pub fn pick_folder(title: &str, start: &str) -> Option<PathBuf> {
         }
         dialog.pick_folder()
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(target_os = "android")]
     {
         let _ = (title, start);
         None
@@ -265,22 +207,22 @@ pub fn pick_folder(title: &str, start: &str) -> Option<PathBuf> {
 /// Installed by the phone's own crate before the window runs; see
 /// [`install_file_picker`]. The flag asks for the photo and video gallery
 /// rather than the document picker.
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "android")]
 pub type FilePicker = Box<dyn Fn(bool, Box<dyn FnOnce(Vec<PathBuf>) + Send>) + Send + Sync>;
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "android")]
 static FILE_PICKER: std::sync::OnceLock<FilePicker> = std::sync::OnceLock::new();
 
 /// A short tick from the phone's vibration motor, installed by the phone's
 /// own crate; see [`install_haptic`].
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "android")]
 pub type Haptic = Box<dyn Fn() + Send + Sync>;
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "android")]
 static HAPTIC: std::sync::OnceLock<Haptic> = std::sync::OnceLock::new();
 
 /// Installs what [`haptic_tick`] does. Once; a second call is ignored.
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "android")]
 pub fn install_haptic(tick: Haptic) {
     let _ = HAPTIC.set(tick);
 }
@@ -288,7 +230,7 @@ pub fn install_haptic(tick: Haptic) {
 /// A tick you feel: a dragged picture has landed on the frame's centre.
 /// Nothing on a desktop.
 pub fn haptic_tick() {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(target_os = "android")]
     if let Some(tick) = HAPTIC.get() {
         tick();
     }
@@ -296,7 +238,7 @@ pub fn haptic_tick() {
 
 /// Installs the picker a phone answers [`pick_files_async`] with. Once;
 /// a second call is ignored.
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "android")]
 pub fn install_file_picker(picker: FilePicker) {
     let _ = FILE_PICKER.set(picker);
 }
@@ -329,14 +271,14 @@ fn pick_async(
     gallery: bool,
     on_picked: impl FnOnce(Vec<PathBuf>) + Send + 'static,
 ) {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "android"))]
     {
         let _ = gallery;
         if let Some(paths) = pick_files(title, filter) {
             on_picked(paths);
         }
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(target_os = "android")]
     {
         let _ = (title, filter);
         match FILE_PICKER.get() {
@@ -349,7 +291,7 @@ fn pick_async(
 /// Asks for files. `filter` names a family and its extensions, and limits
 /// the dialog to them.
 pub fn pick_files(title: &str, filter: Option<(&str, &[&str])>) -> Option<Vec<PathBuf>> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "android"))]
     {
         let mut dialog = rfd::FileDialog::new().set_title(title);
         if let Some((name, extensions)) = filter {
@@ -357,7 +299,7 @@ pub fn pick_files(title: &str, filter: Option<(&str, &[&str])>) -> Option<Vec<Pa
         }
         dialog.pick_files()
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(target_os = "android")]
     {
         let _ = (title, filter);
         None
@@ -371,11 +313,11 @@ pub fn pick_files(title: &str, filter: Option<(&str, &[&str])>) -> Option<Vec<Pa
 /// that explains itself. The path is in the message, which is the part a
 /// developer on a cable can still use.
 pub fn reveal(path: &str) -> Result<(), String> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(target_os = "android"))]
     {
         opener::reveal(path).map_err(|error| error.to_string())
     }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(target_os = "android")]
     {
         Err(format!(
             "this device has no file manager to open {path} with"

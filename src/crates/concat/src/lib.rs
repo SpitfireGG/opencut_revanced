@@ -40,7 +40,7 @@ mod i18n;
 mod platform;
 /// What a phone's own crate installs before the window runs: the way to
 /// the system's file picker. See `platform::pick_files_async`.
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(target_os = "android")]
 pub use platform::{FilePicker, Haptic, install_file_picker, install_haptic};
 mod prefs;
 mod presets;
@@ -106,7 +106,6 @@ pub fn run() -> Result<(), slint::PlatformError> {
     }
 
     let app = App::new()?;
-    app.set_macos(platform::MACOS);
 
     let studio = Studio::new(host);
     let dark = studio.prefs.dark.unwrap_or(true);
@@ -282,7 +281,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
             }
         }
     });
-    app.set_own_window_buttons(platform::OWN_WINDOW_BUTTONS);
+    app.set_own_window_buttons(true);
 
     // Mutate, then republish. Every handler is one of these three: the whole
     // window, the lanes alone (for the handlers a pointer drives directly,
