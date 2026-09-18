@@ -499,7 +499,10 @@ export component PhoneEditor inherits Rectangle {
     /// stays on the screen.
     property <length> timeline-room: root.height - root.bar-h - root.transport-h
         - root.grip-h - root.strip-h - root.tools-h - 140px;
-    property <length> timeline-h: Math.max(96px,
+    /// Never shorter than its rows - the four parts, the footage's sound
+    /// and the ruler under them - and never so tall the picture goes.
+    property <length> rows-h: 262px;
+    property <length> timeline-h: Math.max(Math.min(root.rows-h, root.timeline-room),
         Math.min(root.timeline-room, root.height * root.timeline-share));
     property <length> lower-h: root.full ? 0px
         : root.grip-h + root.timeline-h + root.strip-h + root.tools-h;
@@ -622,6 +625,7 @@ export component PhoneEditor inherits Rectangle {
 
         HorizontalLayout {
             x: 14px;
+            width: self.preferred-width;
             height: parent.height;
             spacing: 4px;
 
@@ -818,8 +822,11 @@ export component PhoneEditor inherits Rectangle {
             background: Theme.line;
         }
 
-        // Back stays put while the clip's tools scroll beside it.
-        if root.has-clip: ToolButton {
+        // Back stays put while the clip's tools scroll beside it. Hidden,
+        // not removed: a button taken away by its own tap leaves the window
+        // holding that touch, and the next tap anywhere is lost.
+        ToolButton {
+            visible: root.has-clip;
             x: 4px;
             y: 6px;
             height: parent.height - 12px;
@@ -1151,6 +1158,7 @@ export component PhoneEditor inherits Rectangle {
                         Text {
                             y: styles.card-h + 4px;
                             width: parent.width;
+                            height: 18px;
                             text: preset.name;
                             color: Theme.fg-muted;
                             font-size: Theme.fs-sm;
@@ -1176,7 +1184,10 @@ export component PhoneEditor inherits Rectangle {
 
                 // The design's crop: the shapes as chips, each drawn as the
                 // shape it cuts to, and the turns under them.
-                if root.sheet == "crop": VerticalLayout {
+                if root.sheet == "crop": crop-sheet := VerticalLayout {
+                    // The shape last tapped while the sheet is open.
+                    property <string> picked;
+
                     padding: 14px;
                     spacing: 18px;
                     alignment: start;
@@ -1203,8 +1214,9 @@ export component PhoneEditor inherits Rectangle {
                                 spacing: 8px;
 
                                 Text {
+                                    height: 18px;
                                     text: shape.label;
-                                    color: Theme.fg;
+                                    color: crop-sheet.picked == shape.id ? Theme.accent : Theme.fg;
                                     font-size: Theme.fs;
                                     horizontal-alignment: center;
                                 }
@@ -1219,10 +1231,13 @@ export component PhoneEditor inherits Rectangle {
                                         height: shape.h == 0 ? 30px : 36px * shape.h / self.long;
                                         border-radius: 4px;
                                         border-width: 1.5px;
-                                        border-color: crop-chip.pressed ? Theme.accent : Theme.fg-muted;
+                                        border-color: crop-chip.pressed || crop-sheet.picked == shape.id ? Theme.accent : Theme.fg-muted;
                                     }
                                     crop-chip := TouchArea {
-                                        clicked => { Editor.menu-selected("crop:" + shape.id); }
+                                        clicked => {
+                                            crop-sheet.picked = shape.id;
+                                            Editor.menu-selected("crop:" + shape.id);
+                                        }
                                     }
                                 }
                             }

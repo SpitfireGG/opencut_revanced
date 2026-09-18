@@ -376,8 +376,9 @@ impl Default for ExportState {
             open: false,
             name: "Untitled".into(),
             folder: home_folder("Movies"),
-            // A phone exports for Instagram: the full 4K short side.
-            resolution: if cfg!(target_os = "android") { 0 } else { 2 },
+            // A phone exports for Instagram: 1080 wide, which is what it
+            // shows and what every phone's encoder can make.
+            resolution: 2,
             rate: 1,
             quality: 1,
             codec: 0,
@@ -2456,7 +2457,9 @@ impl Studio {
         }
         // Playing from the tail would sit there doing nothing, so the
         // button rewinds first - what every editor does.
-        if self.playhead >= self.duration() {
+        // The phone parks the playhead on the last frame, a frame short of
+        // the end; that is the end too.
+        if self.playhead >= self.duration() - 1.5 / self.frame_rate().max(1.0) {
             self.playhead = 0.0;
         }
         self.playing = true;
@@ -2477,6 +2480,11 @@ impl Studio {
                         studio.playhead = position.min(end);
                         if position >= end {
                             studio.pause();
+                            // Stopped on the last frame, which is on screen,
+                            // not past it.
+                            if studio.compact {
+                                studio.seek(end);
+                            }
                             true
                         } else {
                             studio.request_preview();
@@ -2516,10 +2524,17 @@ impl Studio {
         // arriving there is felt: a firm buzz, once, as it stops.
         if self.prefs.playhead_stops_at_end || self.compact {
             let end = self.duration().max(0.0);
-            if self.compact && end > 0.0 && seconds >= end && before < end - 1e-3 {
+            // The last frame, not the instant after it: a playhead parked
+            // exactly on the end shows nothing, since every clip has ended.
+            let last = if self.compact {
+                (end - 1.0 / self.frame_rate().max(1.0)).max(0.0)
+            } else {
+                end
+            };
+            if self.compact && end > 0.0 && seconds >= last && before < last - 1e-3 {
                 crate::platform::haptic_firm();
             }
-            self.playhead = self.playhead.min(end);
+            self.playhead = self.playhead.min(last);
         }
         self.host.playback.seek(f64::from(self.playhead));
         self.request_preview();
@@ -5943,6 +5958,22 @@ impl Studio {
                     studio.export.written = written;
                     studio.notify(&t("Export finished"), false);
                 }
+                // A phone's encoder that cannot take the size - 4K on most
+                // of them - gets the export again at 1080, which is what
+                // Instagram shows anyway, rather than a failure to read.
+                Err(error)
+                    if cfg!(target_os = "android")
+                        && error.contains("open encoder")
+                        && studio.export.resolution < 2 =>
+                {
+                    studio.export.resolution = 2;
+                    studio.export.phase = ExportPhase::Idle;
+                    studio.notify(
+                        &t("This phone cannot encode that size; exporting at 1080 × 1920"),
+                        false,
+                    );
+                    studio.export_start();
+                }
                 Err(error) => {
                     if studio.export.phase == ExportPhase::Idle {
                         // Cancelled: the sheet already went back to idle.
@@ -8465,12 +8496,23 @@ impl Studio {
             "lock" => self.toggle_lock(&clip.track_id),
             "fit-width" => self.fit_width(&clip),
             "mirror" => {
-                self.apply(Command::UpdateClip {
-                    clip_id: id.to_owned(),
-                    patch: ClipPatch {
+                // Left to right as seen: a flip happens before the turn, so
+                // a clip turned on its side flips along its own height.
+                let turn = clip.rotation.to_radians();
+                let patch = if turn.sin().abs() > turn.cos().abs() {
+                    ClipPatch {
+                        flip_v: Some(!clip.flip_v),
+                        ..Default::default()
+                    }
+                } else {
+                    ClipPatch {
                         flip_h: Some(!clip.flip_h),
                         ..Default::default()
-                    },
+                    }
+                };
+                self.apply(Command::UpdateClip {
+                    clip_id: id.to_owned(),
+                    patch,
                 });
             }
             "rotate" => {

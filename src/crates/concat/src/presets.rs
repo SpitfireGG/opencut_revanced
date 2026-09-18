@@ -166,7 +166,6 @@ pub fn builtin() -> Vec<TextPreset> {
             TextStyle {
                 color: "#10160a".to_owned(),
                 background: "#c6f432".to_owned(),
-                align: TextAlign::Left,
                 shadow: false,
                 ..neue("Name — Title", 600.0, 0.05)
             },

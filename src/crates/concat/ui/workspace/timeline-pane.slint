@@ -140,7 +140,7 @@ export component TimelinePane inherits Rectangle {
         Math.min(root.header-width, root.width / 2));
     /// On a phone the ruler is under the rows; this is only the gap above
     /// the first.
-    in property <length> ruler-height: root.phone ? 6px : 28px;
+    in property <length> ruler-height: root.phone ? 20px : 28px;
 
     /// Clamped here rather than only where it is written, so a pane dragged
     /// taller than its own track stack cannot stay parked past the end. The
