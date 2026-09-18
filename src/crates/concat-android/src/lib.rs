@@ -129,8 +129,8 @@ mod picker {
     pub fn install(app: &AndroidApp) {
         let app = app.clone();
         let haptic_app = app.clone();
-        concat::install_haptic(Box::new(move || {
-            if let Err(error) = tick(&haptic_app) {
+        concat::install_haptic(Box::new(move |firm| {
+            if let Err(error) = tick(&haptic_app, firm) {
                 log::warn!("could not vibrate: {error}");
             }
         }));
@@ -167,8 +167,8 @@ mod picker {
         Ok(CLASS.get().expect("set just above"))
     }
 
-    /// `ConcatFiles.tick`: a short buzz.
-    fn tick(app: &AndroidApp) -> jni::errors::Result<()> {
+    /// `ConcatFiles.tick`: a short buzz, or a firm one.
+    fn tick(app: &AndroidApp, firm: bool) -> jni::errors::Result<()> {
         // SAFETY: as in `pick`.
         let vm = unsafe { JavaVM::from_raw(app.vm_as_ptr().cast()) };
         vm.attach_current_thread(|env| {
@@ -178,8 +178,8 @@ mod picker {
             env.call_static_method(
                 class,
                 jni_str!("tick"),
-                jni_sig!("(Landroid/app/Activity;)V"),
-                &[(&activity).into()],
+                jni_sig!("(Landroid/app/Activity;Z)V"),
+                &[(&activity).into(), firm.into()],
             )?;
             Ok(())
         })

@@ -1854,27 +1854,8 @@ impl Studio {
         }
     }
 
-    /// Where the footage ends: the end of the last clip on a footage lane.
-    fn main_end(&self) -> f64 {
-        let roles = self.lane_roles();
-        let timeline = self.timeline();
-        timeline
-            .clips
-            .iter()
-            .filter(|clip| {
-                timeline
-                    .tracks
-                    .iter()
-                    .position(|lane| lane.id == clip.track_id)
-                    .is_some_and(|index| roles[index] == ROLE_FOOTAGE)
-            })
-            .map(|clip| clip.start + clip.duration)
-            .fold(0.0, f64::max)
-    }
-
     /// A phone's placement: a new clip with no lane named goes on the lane
-    /// of its part (see `lane_for`), and new footage joins the end of the
-    /// main track.
+    /// of its part (see `lane_for`), at the playhead.
     fn place_by_role(&mut self, command: Command) -> Command {
         match command {
             Command::Batch { commands } => Command::Batch {
@@ -1916,9 +1897,9 @@ impl Studio {
         }
     }
 
-    /// The command that puts media on a phone's timeline: footage (and a
-    /// still, unless `overlay`) at the end of the main track, sound and
-    /// overlays at `at`.
+    /// The command that puts media on a phone's timeline, whole and at
+    /// `at`: footage (and a still, unless `overlay`) on a footage lane,
+    /// sound on a sound lane, an overlay above the footage.
     fn place_media(&mut self, media_id: String, overlay: bool, at: f64) -> Option<Command> {
         let item = self.project().media_by_id(&media_id)?;
         let length = item.duration.unwrap_or(5.0);
@@ -1928,11 +1909,10 @@ impl Studio {
             model::MediaKind::Image if overlay => ROLE_OVERLAY,
             model::MediaKind::Image => ROLE_FOOTAGE,
         };
-        let start = if role == ROLE_FOOTAGE {
-            self.main_end()
-        } else {
-            at
-        };
+        // At the playhead - zero in an empty project - whatever it is: no
+        // track constrains another, and nothing is cut to fit. The
+        // timeline grows to hold it.
+        let start = at.max(0.0);
         let track_id = self.lane_for(role, start, length)?;
         Some(Command::AddClip {
             media_id,
@@ -2529,9 +2509,17 @@ impl Studio {
     /// lets it, which is the default, so the ruler can be clicked beyond the
     /// last clip and something placed at the playhead there.
     pub fn seek(&mut self, seconds: f32) {
+        let before = self.playhead;
         self.playhead = seconds.max(0.0);
-        if self.prefs.playhead_stops_at_end {
-            self.playhead = self.playhead.min(self.duration().max(0.0));
+        // The playhead roams from zero to the timeline's end - the end of
+        // the furthest clip on any track - and no further. On a phone,
+        // arriving there is felt: a firm buzz, once, as it stops.
+        if self.prefs.playhead_stops_at_end || self.compact {
+            let end = self.duration().max(0.0);
+            if self.compact && end > 0.0 && seconds >= end && before < end - 1e-3 {
+                crate::platform::haptic_firm();
+            }
+            self.playhead = self.playhead.min(end);
         }
         self.host.playback.seek(f64::from(self.playhead));
         self.request_preview();
@@ -3782,13 +3770,13 @@ impl Studio {
         self.gesture = gesture;
     }
 
-    /// Where the footage on the timeline ends: the last frame of any video
-    /// but `except`. None when there is no video.
-    fn footage_end(&self, except: &str) -> Option<f64> {
+    /// Where the timeline's content ends without `except`: the end of the
+    /// furthest other clip on any track. None when there is no other clip.
+    fn content_end_except(&self, except: &str) -> Option<f64> {
         self.timeline()
             .clips
             .iter()
-            .filter(|clip| clip.kind == model::ClipKind::Video && clip.id != except)
+            .filter(|clip| clip.id != except)
             .map(|clip| clip.start + clip.duration)
             .reduce(f64::max)
     }
@@ -3802,9 +3790,9 @@ impl Studio {
             let length = self.project().media_by_id(&clip.media_id)?.duration? as f32;
             return Some(start + (length - source_start) / speed.max(0.01));
         }
-        if self.compact {
-            return self.footage_end(id).map(|end| end as f32);
-        }
+        // A still or a title has no end of its own, and no other track
+        // limits it: tracks are independent, and a clip past the end of the
+        // rest simply makes the timeline longer.
         None
     }
 
@@ -5863,6 +5851,19 @@ impl Studio {
     }
 
     /// Starts the render on a worker, reporting into the sheet.
+    /// Where the export is written: the chosen folder, and the name with
+    /// `CONCAT_` in front - every file the app makes is told apart from the
+    /// rest of the gallery at a glance.
+    fn export_path(&self) -> String {
+        let name = self.export.name.trim();
+        let name = if name.starts_with("CONCAT") {
+            name.to_owned()
+        } else {
+            format!("CONCAT_{name}")
+        };
+        format!("{}/{name}.mp4", self.export.folder.trim_end_matches('/'))
+    }
+
     pub fn export_start(&mut self) {
         let Some(session) = self.session.as_ref() else {
             return;
@@ -5880,11 +5881,7 @@ impl Studio {
                 return;
             }
         };
-        let output = format!(
-            "{}/{}.mp4",
-            self.export.folder.trim_end_matches('/'),
-            self.export.name.trim()
-        );
+        let output = self.export_path();
         let spec = ExportSpec {
             output: output.clone(),
             crf: EXPORT_CRF[self.export.quality.min(2)],
@@ -7866,12 +7863,7 @@ impl Studio {
             portrait: height > width,
             open: self.export.open,
             name: self.export.name.as_str().into(),
-            path: format!(
-                "{}/{}.mp4",
-                self.export.folder.trim_end_matches('/'),
-                self.export.name
-            )
-            .into(),
+            path: self.export_path().into(),
             format: format!("{width} × {height} · {rate:.2} fps").into(),
             duration: {
                 let whole = self.duration().max(0.0) as i32;
@@ -8578,10 +8570,13 @@ impl Studio {
                 .and_then(|media| media.duration);
             match length {
                 Some(length) => (length - clip.source_start) / rate - clip.duration,
-                // A still or a title runs on to the end of the footage.
-                None => match self.footage_end(&clip.id) {
-                    Some(end) => end - clip.start - clip.duration,
-                    None => return,
+                // A still or a title runs on to where the rest of the
+                // timeline ends - asked for, never done on its own.
+                None => match self.content_end_except(&clip.id) {
+                    Some(end) if end > clip.start + clip.duration => {
+                        end - clip.start - clip.duration
+                    }
+                    _ => return,
                 },
             }
         };

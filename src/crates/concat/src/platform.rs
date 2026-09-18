@@ -226,7 +226,8 @@ static FILE_PICKER: std::sync::OnceLock<FilePicker> = std::sync::OnceLock::new()
 /// A short tick from the phone's vibration motor, installed by the phone's
 /// own crate; see [`install_haptic`].
 #[cfg(target_os = "android")]
-pub type Haptic = Box<dyn Fn() + Send + Sync>;
+/// `true` asks for a firm one.
+pub type Haptic = Box<dyn Fn(bool) + Send + Sync>;
 
 #[cfg(target_os = "android")]
 static HAPTIC: std::sync::OnceLock<Haptic> = std::sync::OnceLock::new();
@@ -242,7 +243,16 @@ pub fn install_haptic(tick: Haptic) {
 pub fn haptic_tick() {
     #[cfg(target_os = "android")]
     if let Some(tick) = HAPTIC.get() {
-        tick();
+        tick(false);
+    }
+}
+
+/// A firm buzz: the playhead has come to the end of the timeline and
+/// stopped there. Nothing on a desktop.
+pub fn haptic_firm() {
+    #[cfg(target_os = "android")]
+    if let Some(tick) = HAPTIC.get() {
+        tick(true);
     }
 }
 

@@ -384,7 +384,9 @@ component Clip inherits Rectangle {
         }
 
         if root.marked && root.width > 20px: Icon {
-            x: 6px;
+            // Held at the left of what is on screen, so a clip scrolled half
+            // off still says what it is.
+            x: Math.max(6px, Math.min(parent.width - 20px, root.view-from + 6px));
             y: (parent.height - self.height) / 2;
             glyph: root.item.kind == ClipKind.filter ? Glyph.filter
                 : root.item.kind == ClipKind.text ? Glyph.text-mark
@@ -394,10 +396,11 @@ component Clip inherits Rectangle {
         }
 
         if root.width > 30px: Text {
-            x: root.text-x;
+            x: Math.max(root.text-x,
+                Math.min(parent.width - 40px, root.view-from + root.text-x));
             y: 0;
-            width: parent.width - root.text-x - 7px
-                - (root.item.fx && root.width > 60px ? 20px : 0px);
+            width: Math.max(0px, parent.width - self.x - 7px
+                - (root.item.fx && root.width > 60px ? 20px : 0px));
             height: parent.height;
             // A title shows its own words, as they read on the picture.
             text: (root.item.kind == ClipKind.text && root.item.text-body != ""
@@ -662,9 +665,12 @@ export component Lanes inherits Rectangle {
     in property <[ClipData]> clips;
     in property <TimelineTool> tool: TimelineTool.select;
     in property <float> playhead;
-    /// The edit's length: past it, a phone's lanes are shaded as beyond the
-    /// end.
+    /// The timeline's length: the end of the furthest clip on any track.
+    /// On a phone the ruler and every lane run from zero to here - ten
+    /// seconds while the project is empty - and nothing at all is drawn
+    /// past it.
     in property <float> duration;
+    property <float> drawn-end: root.duration > 0 ? root.duration : 10;
     in property <float> frame-rate: 30;
     /// Seconds at the left edge of the lanes.
     in property <float> scroll-left;
@@ -957,19 +963,19 @@ export component Lanes inherits Rectangle {
             // just before the edit starts, as the design has it.
             for track in root.tracks: Rectangle {
                 property <length> from: root.at(0);
-                property <length> to: root.duration > 0 ? root.at(root.duration) : root.width;
+                property <length> to: root.at(root.drawn-end);
 
                 x: Math.max(0px, self.from);
                 y: root.ruler-height + track.top - root.track-scroll + 3px;
                 width: Math.max(0px, Math.min(root.width, self.to) - self.x);
                 height: Math.max(0px, track.height - 6px);
-                visible: root.phone && track.empty && track.role >= 0 && track.role <= 3
+                visible: root.phone && track.first && track.role >= 0 && track.role <= 4
                     && track.height > 0 && self.width > 0
                     && self.y + self.height > root.ruler-height && self.y < root.height;
                 border-radius: 4px;
                 background: add-row.pressed ? Theme.field-active : Theme.field;
 
-                Text {
+                if track.empty: Text {
                     x: Math.max(10px, -parent.from + 10px);
                     height: parent.height;
                     text: track.role == 0 ? I18n.t("Add video")
@@ -982,7 +988,7 @@ export component Lanes inherits Rectangle {
                 }
 
                 add-row := TouchArea {
-                    enabled: parent.visible;
+                    enabled: parent.visible && track.empty;
                     clicked => { root.row-add(track.role); }
                 }
             }
@@ -1081,7 +1087,7 @@ export component Lanes inherits Rectangle {
                 tool: root.phone ? TimelineTool.select : root.tool;
                 phone: root.phone;
                 edge-grab: root.phone ? (entry.selected ? 20px : 0px) : 6px;
-                view-from: -self.x;
+                view-from: -self.x + (root.phone ? 44px : 0px);
                 view-to: root.width - self.x;
                 pan-started => { root.pan-start(); }
                 panned(dx, dy) => { root.pan(dx, dy); }
@@ -1331,7 +1337,10 @@ export component Lanes inherits Rectangle {
                 y: root.row-y(entry.row) + (root.tracks[entry.row].height - self.height) / 2;
                 width: 18px;
                 height: 18px;
+                // Between clips only: at the timeline's end it would sit
+                // past it, and past the end nothing is drawn.
                 visible: root.phone && entry.kind == ClipKind.video
+                    && entry.start + entry.duration < root.duration - 0.01
                     && self.x + self.width > 0 && self.x < root.width;
                 border-radius: 4px;
                 background: plus.pressed ? Theme.accent : #ffffff;
@@ -1411,7 +1420,8 @@ export component Lanes inherits Rectangle {
                     y: 0;
                     width: 64px;
                     height: parent.height;
-                    visible: root.tick > 0 && self.x > -64px && self.x < parent.width;
+                    visible: root.tick > 0 && self.seconds <= root.drawn-end + 0.001
+                        && self.x > -64px && self.x < parent.width;
 
                     Rectangle {
                         x: 0;
@@ -1425,6 +1435,7 @@ export component Lanes inherits Rectangle {
                         y: 0;
                         width: 1px;
                         height: 3px;
+                        visible: parent.seconds + (minor + 1) * root.tick / 5 <= root.drawn-end;
                         background: Theme.line-strong;
                     }
                     Text {

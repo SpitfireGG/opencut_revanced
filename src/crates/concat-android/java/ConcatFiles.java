@@ -56,17 +56,21 @@ public class ConcatFiles extends Fragment {
     /** Registered from Rust: the picked files' paths, or none. */
     public static native void filesPicked(String[] paths);
 
-    /** A short tick from the vibration motor. From any thread. */
-    public static void tick(Activity activity) {
+    /**
+     * A short tick from the vibration motor, or with `firm` a heavy click -
+     * the playhead stopping at the end of the timeline. From any thread.
+     */
+    public static void tick(Activity activity, boolean firm) {
         Vibrator vibrator = (Vibrator) activity.getSystemService(Context.VIBRATOR_SERVICE);
         if (vibrator == null || !vibrator.hasVibrator()) {
             return;
         }
         try {
             if (Build.VERSION.SDK_INT >= 29) {
-                vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK));
+                vibrator.vibrate(VibrationEffect.createPredefined(
+                        firm ? VibrationEffect.EFFECT_HEAVY_CLICK : VibrationEffect.EFFECT_TICK));
             } else {
-                vibrator.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE));
+                vibrator.vibrate(VibrationEffect.createOneShot(firm ? 45 : 15, firm ? 255 : VibrationEffect.DEFAULT_AMPLITUDE));
             }
         } catch (Exception e) {
             Log.w(TAG, "Could not vibrate: " + e);
