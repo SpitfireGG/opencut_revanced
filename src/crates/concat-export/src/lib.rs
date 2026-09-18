@@ -665,6 +665,10 @@ pub fn render(request: &ExportRequest, mut reporter: Reporter<'_>) -> Result<Str
         .file_stem()
         .map_or_else(|| "concat".into(), |s| s.to_string_lossy());
     let directory = output.parent().unwrap_or(Path::new("."));
+    // The folder may not exist yet - a phone's Movies folder does not until
+    // something is written there.
+    std::fs::create_dir_all(directory)
+        .map_err(|error| format!("could not create {}: {error}", directory.display()))?;
     let silent = directory.join(format!(".{stem}.concat-video.mp4"));
     let mixed = directory.join(format!(".{stem}.concat-audio.m4a"));
 
