@@ -541,12 +541,18 @@ component Clip inherits Rectangle {
     property <int> down-edge: -1;
     property <bool> held;
     property <bool> holding;
+    /// A finger held still on a clip lifts it: from then the drag moves the
+    /// clip rather than the timeline, as VN's long press does.
     Timer {
-        interval: 300ms;
+        interval: 350ms;
         running: root.holding;
         triggered => {
             root.held = true;
             root.holding = false;
+            if (root.phone && touch.pressed && !touch.travelled && !touch.moving) {
+                touch.moving = true;
+                root.pressed(false, -1);
+            }
         }
     }
 
@@ -562,7 +568,11 @@ component Clip inherits Rectangle {
                     self.origin-x = self.absolute-position.x + self.mouse-x;
                     self.origin-y = self.absolute-position.y + self.mouse-y;
                     self.travelled = false;
-                    self.moving = root.item.selected;
+                    // Only a selected clip's end tabs trim at once; anywhere
+                    // else a drag scrolls, and a hold lifts the clip to move
+                    // it. A swipe after selecting a clip must not carry it
+                    // off.
+                    self.moving = root.item.selected && root.edge-at >= 0;
                     root.down-edge = root.edge-at;
                     root.held = false;
                     root.holding = true;
