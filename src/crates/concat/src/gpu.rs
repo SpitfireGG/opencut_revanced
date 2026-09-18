@@ -10,9 +10,9 @@
 //! selection time; `None` when the machine offers no adapter, and then the
 //! window renders the way it did without one.
 //!
-//! On Android the backend owns its device and none is shared, so the type
-//! is carried and never opened there; see platform.rs.
-#![cfg_attr(target_os = "android", allow(dead_code))]
+//! On Android the device is opened at the same point, but the window takes
+//! it later: Slint's Android backend accepts a device only once the window
+//! exists. See `run` in lib.rs.
 
 /// The shared device and what it was created from.
 #[derive(Clone)]
