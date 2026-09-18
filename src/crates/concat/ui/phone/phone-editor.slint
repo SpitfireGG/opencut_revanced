@@ -378,6 +378,7 @@ export component PhoneEditor inherits Rectangle {
         else if (tool.id == "project") { root.open("project", tool.id, tool.label); }
         else if (tool.id == "ratio") { root.open("ratio", tool.id, I18n.t("Frame")); }
         else if (tool.id == "crop") { root.open("crop", tool.id, tool.label); }
+        else if (tool.id == "styles") { root.open("styles", tool.id, I18n.t("Text styles")); }
         else if (tool.id == "mirror") { Editor.menu-selected("mirror"); }
         else if (tool.id == "highlights") { root.open("highlights", tool.id, tool.label); }
         else if (tool.id == "fit-width") { Editor.menu-selected("fit-width"); }
@@ -447,6 +448,7 @@ export component PhoneEditor inherits Rectangle {
     ];
     property <[PhoneTool]> text-tools: [
         { id: "words", glyph: Glyph.text-mark, label: I18n.t("Edit") },
+        { id: "styles", glyph: Glyph.sparkle, label: I18n.t("Style") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
@@ -519,10 +521,9 @@ export component PhoneEditor inherits Rectangle {
         if (role == 0) {
             Editor.shortcut("import-footage");
         } else if (role == 1) {
-            // A title at the playhead, straight away, with its words open.
-            Editor.library-add-text("default");
-            root.section = "Text";
-            root.open("clip", "words", I18n.t("Text"));
+            // The looks first: picking one places the title and opens its
+            // words.
+            root.open("styles", "text", I18n.t("Text styles"));
         } else if (role == 2) {
             Editor.shortcut("import-overlay");
         } else if (role == 3) {
@@ -1090,6 +1091,83 @@ export component PhoneEditor inherits Rectangle {
                                             root.close();
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // The text looks, as samples: with a title selected a tap
+                // restyles it and keeps its words; otherwise it places a new
+                // title in that look and opens its words.
+                if root.sheet == "styles": styles := Flickable {
+                    property <length> gap: 10px;
+                    property <length> card-w: (self.width - 28px - 2 * self.gap) / 3;
+                    property <length> card-h: self.card-w * 0.72;
+                    viewport-height: Math.ceil(Editor.text-presets.length / 3)
+                        * (self.card-h + 22px + self.gap) + 28px;
+
+                    for preset[i] in Editor.text-presets: Rectangle {
+                        x: 14px + Math.mod(i, 3) * (styles.card-w + styles.gap);
+                        y: 14px + Math.floor(i / 3) * (styles.card-h + 22px + styles.gap);
+                        width: styles.card-w;
+                        height: styles.card-h + 22px;
+
+                        Rectangle {
+                            width: parent.width;
+                            height: styles.card-h;
+                            border-radius: Theme.r;
+                            background: Theme.sample-ground;
+                            border-width: 1px;
+                            border-color: pick.pressed ? Theme.accent : Theme.line;
+                            clip: true;
+
+                            if preset.plated: Rectangle {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: Math.min(parent.width - 8px, sample.preferred-width + 14px);
+                                height: sample.preferred-height + 6px;
+                                border-radius: Theme.r-xs;
+                                background: preset.plate;
+                            }
+
+                            sample := Text {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                width: Math.min(parent.width - 12px, self.preferred-width);
+                                text: "Aa";
+                                color: preset.fill;
+                                font-family: preset.family;
+                                font-weight: preset.weight;
+                                font-italic: preset.italic;
+                                font-size: Math.max(0.6, Math.min(1.6, preset.size / 0.09)) * 20px;
+                                stroke: preset.stroke;
+                                stroke-width: preset.stroke-width > 0 ? 1px : 0px;
+                                horizontal-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+
+                        Text {
+                            y: styles.card-h + 4px;
+                            width: parent.width;
+                            text: preset.name;
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
+                            horizontal-alignment: center;
+                            overflow: elide;
+                        }
+
+                        pick := TouchArea {
+                            clicked => {
+                                if (root.is-title) {
+                                    Editor.text-restyle(preset.id);
+                                } else {
+                                    Editor.library-add-text(preset.id);
+                                    root.section = "Text";
+                                    root.sheet = "clip";
+                                    root.sheet-tool = "words";
+                                    root.sheet-title = I18n.t("Text");
                                 }
                             }
                         }

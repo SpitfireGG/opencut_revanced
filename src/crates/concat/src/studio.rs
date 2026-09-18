@@ -3203,6 +3203,44 @@ impl Studio {
         }
     }
 
+    /// Gives the selected title a preset's look, keeping its words and
+    /// where it sits; the preset's font comes into the project in the same
+    /// step. One undo step.
+    pub fn restyle_title(&mut self, preset: &str) {
+        let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id).cloned()) else {
+            return;
+        };
+        if clip.kind != model::ClipKind::Text {
+            return;
+        }
+        let Some(found) = self.text_presets.iter().find(|held| held.id == preset) else {
+            return;
+        };
+        let content = clip
+            .text
+            .as_ref()
+            .map(|text| text.content.clone())
+            .unwrap_or_default();
+        let style = TextStyle {
+            content,
+            ..found.style.clone()
+        };
+        let font = presets::install_font(&self.host.dirs, found);
+        let mut commands: Vec<Command> = font
+            .map(|(family, path)| Command::AddFont { family, path })
+            .into_iter()
+            .collect();
+        commands.push(Command::UpdateClip {
+            clip_id: clip.id,
+            patch: ClipPatch {
+                text: Some(Some(style)),
+                ..Default::default()
+            },
+        });
+        self.apply(Command::Batch { commands });
+        self.request_preview();
+    }
+
     /// The selected clip's id, when exactly one is selected.
     pub fn sole_selection(&self) -> Option<String> {
         (self.selection.len() == 1).then(|| self.selection[0].clone())
