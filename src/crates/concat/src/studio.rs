@@ -7858,11 +7858,9 @@ impl Studio {
                 if self.export.ten_bit {
                     words.push("10-bit".to_owned());
                 }
-                if codec
-                    .encoders(true)
-                    .first()
-                    .is_some_and(|name| name.ends_with("_videotoolbox"))
-                {
+                // The phone's build has no software encoder: its silicon
+                // does the work.
+                if cfg!(target_os = "android") {
                     words.push(format!("· {}", t("hardware")));
                 }
                 words.join(" ")

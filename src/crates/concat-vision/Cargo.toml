@@ -23,12 +23,6 @@ png = "0.17"
 # the CPU provider is always there behind it.
 ort = { workspace = true, optional = true }
 
-[target.'cfg(target_vendor = "apple")'.dependencies]
-ort = { workspace = true, optional = true, features = ["coreml"] }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-ort = { workspace = true, optional = true, features = ["directml"] }
-
 [target.'cfg(target_os = "android")'.dependencies]
 ort = { workspace = true, optional = true, features = ["nnapi"] }
 

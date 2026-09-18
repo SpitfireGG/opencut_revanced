@@ -3,8 +3,6 @@
 # the engine links.
 #
 #   scripts/ffmpeg-mobile.sh aarch64-linux-android [out-dir]
-#   scripts/ffmpeg-mobile.sh aarch64-apple-ios     [out-dir]
-#   scripts/ffmpeg-mobile.sh aarch64-apple-ios-sim [out-dir]
 #
 # The result is a prefix - include/ and lib/ - that concat-media's
 # bindings take through FFMPEG_DIR, exactly as they take a Homebrew or
@@ -13,21 +11,18 @@
 # another FFmpeg build and CI's cache can keep it.
 #
 # Android needs the NDK (ANDROID_NDK_HOME, or the newest one under the SDK
-# in ANDROID_HOME / ~/Library/Android/sdk); iOS needs Xcode. Both builds
-# are LGPL FFmpeg with the platform's hardware codecs turned on -
-# MediaCodec through the JNI on Android, VideoToolbox on iOS - and nothing
-# else linked in: a phone encodes with its silicon, and the GPL encoders
-# the desktop bundles have no place there.
+# in ANDROID_HOME). The build is LGPL FFmpeg with the phone's hardware
+# codecs turned on - MediaCodec through the JNI - and nothing else linked
+# in: a phone encodes with its silicon.
 set -euo pipefail
 
-target=${1:?target triple: aarch64-linux-android, aarch64-apple-ios or aarch64-apple-ios-sim}
+target=${1:?target triple: aarch64-linux-android}
 workspace=$(cd "$(dirname "$0")/.." && pwd)
 out=${2:-$workspace/vendor/ffmpeg/$target}
 version=${FFMPEG_VERSION:-8.1}
-# Oldest OS each build runs on. Android 8.0 is where AAudio, the audio
-# path the engine plays through, appears; iOS 15 is where Slint draws.
+# Oldest Android the build runs on: 8.0, where AAudio, the audio path the
+# engine plays through, appears.
 android_api=${ANDROID_API:-26}
-ios_min=${IPHONEOS_DEPLOYMENT_TARGET:-15.0}
 jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 work=${FFMPEG_WORK_DIR:-$workspace/vendor/ffmpeg/src}
@@ -65,7 +60,7 @@ case "$target" in
   aarch64-linux-android)
     ndk=${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}
     if [ -z "$ndk" ]; then
-      sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}
+      sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}
       ndk=$(ls -d "$sdk"/ndk/* 2>/dev/null | sort -V | tail -1 || true)
     fi
     [ -d "$ndk" ] || { echo "no Android NDK: set ANDROID_NDK_HOME" >&2; exit 1; }
@@ -81,26 +76,6 @@ case "$target" in
       --enable-jni --enable-mediacodec \
       --extra-cflags="-fno-omit-frame-pointer" \
       --extra-ldflags="-Wl,-z,max-page-size=16384")
-    ;;
-  aarch64-apple-ios|aarch64-apple-ios-sim)
-    if [ "$target" = aarch64-apple-ios ]; then
-      sdk=iphoneos; min_flag="-miphoneos-version-min=$ios_min"
-    else
-      sdk=iphonesimulator; min_flag="-mios-simulator-version-min=$ios_min"
-    fi
-    sysroot=$(xcrun --sdk $sdk --show-sdk-path)
-    echo "Building FFmpeg $version for $target against $sysroot"
-    (cd "$build" && "$src/configure" "${common[@]}" \
-      --target-os=darwin --arch=arm64 \
-      --sysroot="$sysroot" \
-      --cc="$(xcrun --sdk $sdk -f clang)" \
-      --cxx="$(xcrun --sdk $sdk -f clang++)" \
-      --ar="$(xcrun --sdk $sdk -f ar)" --nm="$(xcrun --sdk $sdk -f nm)" \
-      --ranlib="$(xcrun --sdk $sdk -f ranlib)" --strip="$(xcrun --sdk $sdk -f strip)" \
-      --enable-videotoolbox --enable-audiotoolbox \
-      --disable-avfoundation --disable-coreimage \
-      --extra-cflags="-arch arm64 $min_flag" \
-      --extra-ldflags="-arch arm64 $min_flag")
     ;;
   *)
     echo "unknown target $target" >&2; exit 1 ;;
