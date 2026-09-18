@@ -358,6 +358,8 @@ export component PhoneEditor inherits Rectangle {
         // the library's pages
         else if (tool.id == "media") { root.library-page = 0; root.open("library", tool.id, tool.label); }
         else if (tool.id == "text") { root.add(1); }
+        else if (tool.id == "overlay") { root.add(2); }
+        else if (tool.id == "music") { root.add(3); }
         else if (tool.id == "transitions") { root.library-page = 2; root.open("library", tool.id, tool.label); }
         else if (tool.id == "effects") { root.library-page = 3; root.open("library", tool.id, tool.label); }
         else if (tool.id == "filters") { root.library-page = 4; root.open("library", tool.id, tool.label); }
@@ -392,34 +394,25 @@ export component PhoneEditor inherits Rectangle {
     }
 
     // ── the tool rows ────────────────────────────────────────────────────
+    // The basics only for now: footage, words, overlays, sound,
+    // subtitles and cutting. Looks, effects, animation and templates come
+    // back once these are right.
     property <[PhoneTool]> main-tools: [
-        { id: "media", glyph: Glyph.film, label: I18n.t("Media") },
         { id: "import", glyph: Glyph.import, label: I18n.t("Import") },
         { id: "text", glyph: Glyph.text-mark, label: I18n.t("Text") },
-        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
-        { id: "effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
-        { id: "transitions", glyph: Glyph.transition, label: I18n.t("Transitions") },
-        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
-        { id: "speak", glyph: Glyph.volume, label: I18n.t("Speak") },
-        { id: "templates", glyph: Glyph.slot, label: I18n.t("Templates") },
-        { id: "track", glyph: Glyph.rows, label: I18n.t("Add track") },
+        { id: "overlay", glyph: Glyph.image, label: I18n.t("Overlay") },
+        { id: "music", glyph: Glyph.music, label: I18n.t("Music") },
+        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Subtitles") },
         { id: "project", glyph: Glyph.info, label: I18n.t("Project") },
     ];
     property <PhoneTool> back-tool: { id: "back", glyph: Glyph.chevron-left, label: I18n.t("Back") };
     property <[PhoneTool]> video-tools: [
-        { id: "highlights", glyph: Glyph.sparkle, label: I18n.t("Highlights") },
-        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
-        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
-        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
-        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
-        { id: "cutout", glyph: Glyph.brush, label: I18n.t("Cutout") },
-        { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
+        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
         { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
-        { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
-        { id: "adjust", glyph: Glyph.sun, label: I18n.t("Adjust") },
-        { id: "enhance", glyph: Glyph.sparkle, label: I18n.t("Enhance voice") },
-        { id: "duck", glyph: Glyph.volume-off, label: I18n.t("Auto duck") },
+        { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
+        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Subtitles") },
+        { id: "highlights", glyph: Glyph.sparkle, label: I18n.t("Highlights") },
         { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
         { id: "detach", glyph: Glyph.music, label: I18n.t("Detach audio") },
         { id: "freeze", glyph: Glyph.image, label: I18n.t("Freeze") },
@@ -428,38 +421,26 @@ export component PhoneEditor inherits Rectangle {
     ];
     property <[PhoneTool]> image-tools: [
         { id: "fit-width", glyph: Glyph.fit, label: I18n.t("Fit width") },
-        { id: "filters", glyph: Glyph.filter, label: I18n.t("Filter") },
-        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
-        { id: "clip-effects", glyph: Glyph.sparkle, label: I18n.t("FX") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
-        { id: "cutout", glyph: Glyph.brush, label: I18n.t("Cutout") },
-        { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
-        { id: "adjust", glyph: Glyph.sun, label: I18n.t("Adjust") },
+        { id: "edit", glyph: Glyph.fit, label: I18n.t("Trim") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> audio-tools: [
         { id: "sound", glyph: Glyph.volume, label: I18n.t("Volume") },
         { id: "duck", glyph: Glyph.volume-off, label: I18n.t("Auto duck") },
-        { id: "enhance", glyph: Glyph.sparkle, label: I18n.t("Enhance voice") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
         { id: "speed", glyph: Glyph.clock, label: I18n.t("Speed") },
-        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> text-tools: [
         { id: "words", glyph: Glyph.text-mark, label: I18n.t("Edit") },
-        { id: "animation", glyph: Glyph.sparkle, label: I18n.t("Animation") },
-        { id: "speak", glyph: Glyph.volume, label: I18n.t("Speak") },
         { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
         { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> layer-tools: [
-        { id: "layer", glyph: Glyph.filter, label: I18n.t("Filter") },
-        { id: "split", glyph: Glyph.split, label: I18n.t("Split") },
-        { id: "duplicate", glyph: Glyph.copy, label: I18n.t("Duplicate") },
         { id: "delete", glyph: Glyph.trash, label: I18n.t("Delete") },
     ];
     property <[PhoneTool]> tools: !root.has-clip ? root.main-tools
@@ -547,8 +528,11 @@ export component PhoneEditor inherits Rectangle {
             root.open("clip", "words", I18n.t("Text"));
         } else if (role == 2) {
             Editor.shortcut("import-overlay");
-        } else {
+        } else if (role == 3) {
             Editor.shortcut("import-place");
+        } else {
+            // The footage's sound switch, under its row.
+            Editor.shortcut("mute-footage");
         }
     }
 

@@ -168,8 +168,6 @@ component Clip inherits Rectangle {
     property <length> text-x: root.marked ? 22px : 7px;
     property <length> body-h: Math.max(0px, root.height - root.header-h);
     /// The phone's sound strip under a video's frames; none without sound.
-    property <length> sound-h: root.phone && root.item.kind == ClipKind.video
-        && root.item.wave != "" ? Math.min(14px, root.body-h * 0.28) : 0px;
     /// A fade on a picture clip is shaded in a band at the foot instead of
     /// over the whole body: the fade is an *audio* property, and shading the
     /// picture would say it fades to black. Sound shades its whole body; a
@@ -256,7 +254,7 @@ component Clip inherits Rectangle {
             x: 0;
             y: 0;
             width: parent.width;
-            height: parent.height - root.sound-h;
+            height: parent.height;
             clip: true;
 
             property <length> tile-w: Math.max(4px,
@@ -284,28 +282,6 @@ component Clip inherits Rectangle {
                 source-clip-y: 0;
                 source-clip-width: root.item.strip.frame-width;
                 source-clip-height: root.item.strip.height;
-            }
-        }
-
-        // On a phone a video's sound runs under its frames, as VN draws it:
-        // a strip of its envelope in the accent.
-        if root.sound-h > 0: Rectangle {
-            x: 0;
-            y: parent.height - root.sound-h;
-            width: parent.width;
-            height: root.sound-h;
-            background: #000000b3;
-
-            Path {
-                x: 0;
-                y: 2px;
-                width: parent.width;
-                height: parent.height - 3px;
-                commands: root.item.wave;
-                viewbox-width: 1;
-                viewbox-height: 1;
-                fit: fill;
-                fill: #ffffffcc;
             }
         }
 
@@ -390,7 +366,9 @@ component Clip inherits Rectangle {
             width: parent.width - root.text-x - 7px
                 - (root.item.fx && root.width > 60px ? 20px : 0px);
             height: parent.height;
-            text: root.item.name;
+            // A title shows its own words, as they read on the picture.
+            text: root.item.kind == ClipKind.text && root.item.text-body != ""
+                ? root.item.text-body : root.item.name;
             color: Theme.clip-ink;
             font-size: Theme.fs-sm;
             vertical-alignment: center;
@@ -729,15 +707,12 @@ export component Lanes inherits Rectangle {
     /// Seconds at the left edge as drawn. On a phone that follows the
     /// playhead, so playing scrolls the lanes and scrubbing is panning.
     ///
-    /// The playhead rides at the middle once there is time behind it to
-    /// show; before that it sits where the playhead's time is, so the start
-    /// of the edit is at the lanes' left edge and not half a screen in.
+    /// On a phone the playhead holds the middle and the edit slides under
+    /// it, as VN's does: at the start, the row icons and the cover sit in
+    /// the half to its left.
     property <float> left: root.phone
-        ? root.playhead - Math.min(root.width / 2,
-            root.lead + root.playhead * root.px-per-second) / root.px-per-second
+        ? root.playhead - root.width / 2 / root.px-per-second
         : root.scroll-left;
-    /// Room before the first frame on a phone, for the head handle.
-    property <length> lead: 20px;
     /// x of a moment, in the lanes' own coordinates
     pure function at(seconds: float) -> length {
         return (seconds - root.left) * root.px-per-second;
@@ -843,7 +818,8 @@ export component Lanes inherits Rectangle {
                 width: parent.width;
                 height: track.height;
                 background: Math.mod(row, 2) == 0 ? Theme.lane : Theme.lane-alt;
-                visible: self.y + track.height > root.ruler-height && self.y < root.height;
+                visible: !root.phone && self.y + track.height > root.ruler-height
+                    && self.y < root.height;
 
                 Rectangle {
                     x: 0;
@@ -865,7 +841,7 @@ export component Lanes inherits Rectangle {
                 width: 1px;
                 height: root.lanes-h;
                 background: Theme.grid;
-                visible: root.tick > 0 && self.x >= 0px && self.x < parent.width;
+                visible: !root.phone && root.tick > 0 && self.x >= 0px && self.x < parent.width;
             }
 
             // Declared before the clips, so each clip takes its own press and what
@@ -937,22 +913,27 @@ export component Lanes inherits Rectangle {
                 }
             }
 
-            // ── the phone's empty rows ───────────────────────────────────────
+            // ── the phone's rows ─────────────────────────────────────────────
             //
-            // A row with nothing on it says what it is for and adds it when
-            // tapped, the way VN's rows do.
+            // Each part's row is a bar from the start of the edit to its
+            // end, and nothing either side of it: VN's rows. An empty one
+            // says what it is for and adds it when tapped.
             for track in root.tracks: Rectangle {
-                x: Math.max(0px, root.at(0));
-                y: root.ruler-height + track.top - root.track-scroll + 4px;
-                width: Math.max(0px, root.width - self.x - 8px);
-                height: Math.max(0px, track.height - 8px);
-                visible: root.phone && track.empty && track.role >= 0 && track.height > 0
-                    && self.y + self.height > root.ruler-height && self.y < root.height;
-                border-radius: Theme.r-sm;
+                property <length> from: root.at(0);
+                property <length> to: root.duration > 0 ? root.at(root.duration) : root.width;
+
+                x: Math.max(0px, self.from);
+                y: root.ruler-height + track.top - root.track-scroll + 3px;
+                width: Math.max(0px, Math.min(root.width, self.to) - self.x);
+                height: Math.max(0px, track.height - 6px);
+                visible: root.phone && track.role >= 0 && track.role <= 3 && track.height > 0
+                    && self.width > 0 && self.y + self.height > root.ruler-height
+                    && self.y < root.height;
+                border-radius: 4px;
                 background: add-row.pressed ? Theme.field-active : Theme.field;
 
-                Text {
-                    x: 12px;
+                if track.empty: Text {
+                    x: Math.max(10px, -parent.from + 10px);
                     height: parent.height;
                     text: track.role == 0 ? I18n.t("Tap to add video")
                         : track.role == 1 ? I18n.t("Tap to add text")
@@ -964,9 +945,27 @@ export component Lanes inherits Rectangle {
                 }
 
                 add-row := TouchArea {
-                    enabled: parent.visible;
+                    enabled: parent.visible && track.empty;
                     clicked => { root.row-add(track.role); }
                 }
+            }
+
+            // The footage's sound, under it: each video's envelope as bars,
+            // in the last row, which Rust keeps for it.
+            for entry in root.clips: Path {
+                property <TrackData> sound: root.tracks[root.tracks.length - 1];
+
+                x: root.at(entry.start);
+                y: root.ruler-height + self.sound.top - root.track-scroll + 5px;
+                width: Math.max(2px, entry.duration * root.px-per-second);
+                height: Math.max(0px, self.sound.height - 10px);
+                visible: root.phone && entry.kind == ClipKind.video && entry.wave != ""
+                    && self.x + self.width > 0 && self.x < root.width;
+                commands: entry.wave;
+                viewbox-width: 1;
+                viewbox-height: 1;
+                fit: fill;
+                fill: self.sound.muted ? Theme.fg-dim.with-alpha(0.4) : #e6c34a;
             }
 
             // ── the clips ────────────────────────────────────────────────────
@@ -1224,14 +1223,98 @@ export component Lanes inherits Rectangle {
                 selected(id) => { root.menu-selected(id); }
             }
 
-            // Past the end of the edit, on a phone: the timeline is as long
-            // as the video, and what lies beyond is shaded as outside it.
-            if root.phone && root.duration > 0: Rectangle {
-                x: Math.max(0px, root.at(root.duration));
-                y: root.ruler-height;
-                width: Math.max(0px, root.width - self.x);
-                height: root.height - root.ruler-height;
-                background: Theme.page.with-alpha(0.55);
+            // ── the phone's row icons, cover and add ─────────────────────────
+            //
+            // Each part's icon sits just left of where the edit starts and
+            // moves with it, then stays at the left edge once the edit has
+            // slid past, the way VN's do; the cover sits further left, and
+            // a plus follows the end of the footage.
+            for track in root.tracks: Rectangle {
+                x: Math.max(4px, root.at(0) - 48px);
+                y: root.ruler-height + track.top - root.track-scroll
+                    + (track.height - self.height) / 2;
+                width: 40px;
+                height: Math.min(36px, track.height);
+                visible: root.phone && track.first && track.height > 0
+                    && track.role >= 0 && track.role <= 4
+                    && self.y + self.height > root.ruler-height && self.y < root.height;
+                border-radius: 8px;
+                background: row-icon.pressed ? Theme.field : Theme.lane;
+
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    glyph: track.role == 0 ? Glyph.film
+                        : track.role == 1 ? Glyph.text-mark
+                        : track.role == 2 ? Glyph.image
+                        : track.role == 3 ? Glyph.music
+                        : track.muted ? Glyph.volume-off : Glyph.volume;
+                    size: 18px;
+                    weight: 1.7;
+                    tint: track.role == 4 && track.muted ? Theme.fg-dim : Theme.fg;
+                }
+
+                row-icon := TouchArea {
+                    enabled: parent.visible;
+                    clicked => { root.row-add(track.role); }
+                }
+            }
+
+            if root.phone && root.tracks.length > 0: Rectangle {
+                property <TrackData> sound: root.tracks[root.tracks.length - 1];
+
+                x: root.at(0) - 48px - 8px - self.width;
+                y: root.ruler-height + self.sound.top - root.track-scroll - 57px;
+                width: 56px;
+                height: 54px;
+                visible: self.x + self.width > 0;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Theme.line-strong;
+                background: cover.pressed ? Theme.field : Colors.transparent;
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon { glyph: Glyph.image; size: 15px; tint: Theme.fg-muted; }
+                    }
+                    Text {
+                        text: I18n.t("Cover");
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-xs;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                cover := TouchArea {
+                    clicked => { root.scrubbed(0); }
+                }
+            }
+
+            if root.phone && root.duration > 0 && root.tracks.length > 0: Rectangle {
+                property <TrackData> sound: root.tracks[root.tracks.length - 1];
+
+                x: root.at(root.duration) + 10px;
+                y: root.ruler-height + self.sound.top - root.track-scroll - 51px;
+                width: 42px;
+                height: 42px;
+                visible: self.x < root.width;
+                border-radius: 8px;
+                background: more.pressed ? Theme.field-active : Theme.field;
+
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    glyph: Glyph.plus;
+                    size: 20px;
+                    tint: Theme.fg;
+                }
+
+                more := TouchArea {
+                    clicked => { root.row-add(0); }
+                }
             }
 
             // ── the phone's playhead ─────────────────────────────────────────

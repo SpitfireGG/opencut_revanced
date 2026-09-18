@@ -364,6 +364,7 @@ export component Seat inherits Rectangle {
                 Editor.edge-chip = edge;
             }
             clip-tapped(id) => {
+                Editor.clip-focus(id);
                 Editor.tip-for = id;
                 Editor.edge-chip = -1;
             }

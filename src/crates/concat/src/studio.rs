@@ -97,6 +97,18 @@ pub const ROLE_SPARE: u8 = 4;
 /// plays on a phone: the words over the overlays over the footage.
 const STANDARD_LANES: [u8; 4] = [ROLE_FOOTAGE, ROLE_OVERLAY, ROLE_WORDS, ROLE_SOUND];
 
+/// Where a part's row sits on a phone, top first, as VN stacks them: the
+/// music, the words, the overlays, then the footage over its own sound.
+fn role_rank(role: u8) -> u8 {
+    match role {
+        ROLE_SOUND => 0,
+        ROLE_WORDS => 1,
+        ROLE_OVERLAY => 2,
+        ROLE_FOOTAGE => 3,
+        _ => 4,
+    }
+}
+
 fn clip_role(kind: model::ClipKind) -> u8 {
     match kind {
         model::ClipKind::Video => ROLE_FOOTAGE,
@@ -1662,7 +1674,7 @@ impl Studio {
         let mut order: Vec<usize> = (0..self.timeline().tracks.len()).rev().collect();
         if self.compact {
             let roles = self.lane_roles();
-            order.sort_by_key(|index| roles[*index]);
+            order.sort_by_key(|index| role_rank(roles[*index]));
         }
         order
     }
@@ -1758,6 +1770,67 @@ impl Studio {
                 .map(|index| tracks[index].id.clone())
         };
         found.or_else(|| self.apply(Command::AddTrack))
+    }
+
+    /// How big the monitor's frame is composited: the quality tier's share
+    /// of the output, and on a phone no more than 960 pixels along its long
+    /// side - a 4K Reel previewed at half size is 1080x1920 a frame, which
+    /// no phone composites in time, and its screen shows the picture
+    /// smaller than that anyway.
+    fn preview_scale(&self, width: u32, height: u32, tier: f64) -> f64 {
+        if !self.compact {
+            return tier;
+        }
+        tier.min(960.0 / f64::from(width.max(height).max(1)))
+    }
+
+    /// The footage's sound is off: every video on the footage row is at
+    /// zero. False with no footage.
+    fn footage_muted(&self) -> bool {
+        let mut videos = self
+            .timeline()
+            .clips
+            .iter()
+            .filter(|clip| clip.kind == model::ClipKind::Video)
+            .peekable();
+        videos.peek().is_some() && videos.all(|clip| clip.volume <= 0.0)
+    }
+
+    /// The footage row's sound switch: every video silent, or every video
+    /// back at full. One undo step.
+    pub fn toggle_footage_sound(&mut self) {
+        let volume = if self.footage_muted() { 1.0 } else { 0.0 };
+        let commands: Vec<Command> = self
+            .timeline()
+            .clips
+            .iter()
+            .filter(|clip| clip.kind == model::ClipKind::Video)
+            .map(|clip| Command::UpdateClip {
+                clip_id: clip.id.clone(),
+                patch: ClipPatch {
+                    volume: Some(volume),
+                    ..Default::default()
+                },
+            })
+            .collect();
+        if !commands.is_empty() {
+            self.apply(Command::Batch { commands });
+        }
+    }
+
+    /// A clip tapped on a phone: the playhead is moved into it if it is
+    /// not already there, so a title tapped on its row is on the monitor
+    /// to be dragged and pinched.
+    pub fn focus_clip(&mut self, id: &str) {
+        let Some((start, end)) = self
+            .clip(id)
+            .map(|clip| (clip.start as f32, (clip.start + clip.duration) as f32))
+        else {
+            return;
+        };
+        if self.playhead < start || self.playhead >= end {
+            self.seek(start + ((end - start) / 2.0).min(0.05));
+        }
     }
 
     /// Where the footage ends: the end of the last clip on a footage lane.
@@ -1869,9 +1942,8 @@ impl Studio {
                 .iter()
                 .position(|held| held.id == lane.id);
             return match index.map(|index| roles[index]) {
-                Some(ROLE_FOOTAGE) => 64.0,
-                Some(ROLE_WORDS | ROLE_SOUND) => 34.0,
-                Some(ROLE_OVERLAY) => 38.0,
+                Some(ROLE_FOOTAGE) => 60.0,
+                Some(ROLE_WORDS | ROLE_SOUND | ROLE_OVERLAY) => 32.0,
                 _ => 0.0,
             };
         }
@@ -2168,11 +2240,12 @@ impl Studio {
                 // per pointer step - and the blocks they report are scaled
                 // back up to the output's terms, which the stage measures
                 // in. Nothing is written until the change is committed.
-                let scale = match self.quality_of() {
+                let tier = match self.quality_of() {
                     0 => 1.0,
                     1 => 0.5,
                     _ => 0.25,
                 };
+                let scale = self.preview_scale(width, height, tier);
                 let shown_w = ((f64::from(width) * scale).round() as u32).max(2) & !1;
                 let shown_h = ((f64::from(height) * scale).round() as u32).max(2) & !1;
                 let up = |px: u32| (f64::from(px) / scale).round() as u32;
@@ -2212,11 +2285,15 @@ impl Studio {
         // The frame's own additions - a look being shown, a cutout being
         // painted - go on a copy, so the kept list stays the document's.
         let mut own: Option<Vec<concat_export::ExportClip>> = None;
-        let scale = match self.quality_of() {
-            0 => 1.0,
-            1 => 0.5,
-            _ => 0.25,
-        };
+        let scale = self.preview_scale(
+            width,
+            height,
+            match self.quality_of() {
+                0 => 1.0,
+                1 => 0.5,
+                _ => 0.25,
+            },
+        );
         let width = ((f64::from(width) * scale).round() as u32).max(2) & !1;
         let height = ((f64::from(height) * scale).round() as u32).max(2) & !1;
         // The look being shown before it is laid down goes into this
@@ -2387,7 +2464,9 @@ impl Studio {
         // asks the monitor for the frame under it each time.
         self.transport.start(
             slint::TimerMode::Repeated,
-            std::time::Duration::from_millis(33),
+            // Sixty a second: the phone's lanes slide under the playhead
+            // with every tick, and at thirty they visibly step.
+            std::time::Duration::from_millis(16),
             || {
                 crate::host::Shell::with(|shell, app| {
                     {
@@ -3559,7 +3638,13 @@ impl Studio {
                 let threshold = 8.0 * self.seconds_per_pixel;
                 let snapped = self.snapped(anchor.start + seconds, threshold, primary);
                 let shift = snapped - anchor.start;
-                let rows = nearest_row(lanes, row_top(lanes, anchor.row) + pixels) - anchor.row;
+                // A phone's rows are fixed parts: a clip slides along its
+                // own, never onto another.
+                let rows = if self.compact {
+                    0
+                } else {
+                    nearest_row(lanes, row_top(lanes, anchor.row) + pixels) - anchor.row
+                };
                 let count = self.timeline().tracks.len() as i32;
                 let moves: Vec<(String, f32, Option<String>)> = origins
                     .iter()
@@ -6617,39 +6702,64 @@ impl Studio {
         let mut top = 0.0;
         let roles = self.lane_roles();
         let mut shown = HashSet::new();
-        sync(
-            &models.tracks,
-            self.row_order()
-                .into_iter()
-                .map(|index| (index, &timeline.tracks[index]))
-                .map(|(index, lane)| {
-                    let height = self.lane_height(lane);
-                    let role = if self.compact {
-                        roles[index]
-                    } else {
-                        ROLE_SPARE
-                    };
-                    let row = TrackData {
-                        role: if role == ROLE_SPARE {
-                            -1
-                        } else {
-                            i32::from(role)
-                        },
-                        first: height > 0.0 && shown.insert(role),
-                        empty: !timeline.clips.iter().any(|clip| clip.track_id == lane.id),
-                        id: lane.id.as_str().into(),
-                        visible: lane.visible,
-                        muted: lane.muted,
-                        locked: self.locked(&lane.id),
-                        size: self.lane_size(&lane.id),
-                        height,
-                        top,
-                    };
-                    top += height;
-                    row
-                })
-                .collect(),
-        );
+        let mut rows: Vec<TrackData> = Vec::new();
+        // A phone draws one row per part, every lane of the part in it.
+        let (mut part, mut part_h) = (None, 0.0_f32);
+        for index in self.row_order() {
+            let lane = &timeline.tracks[index];
+            let height = self.lane_height(lane);
+            let role = if self.compact {
+                roles[index]
+            } else {
+                ROLE_SPARE
+            };
+            if self.compact && part != Some(role) {
+                top += part_h;
+                (part, part_h) = (Some(role), 0.0);
+            }
+            part_h = part_h.max(height);
+            rows.push(TrackData {
+                role: if role == ROLE_SPARE {
+                    -1
+                } else {
+                    i32::from(role)
+                },
+                first: height > 0.0 && shown.insert(role),
+                empty: !timeline.clips.iter().any(|clip| clip.track_id == lane.id),
+                id: lane.id.as_str().into(),
+                visible: lane.visible,
+                muted: lane.muted,
+                locked: self.locked(&lane.id),
+                size: self.lane_size(&lane.id),
+                height,
+                top,
+            });
+            if !self.compact {
+                top += height;
+            }
+        }
+        if self.compact {
+            // Under the footage, the row of its sound: the envelope, and the
+            // switch that mutes it. It is no lane, so no clip names it.
+            let footage_end = rows
+                .iter()
+                .filter(|row| row.role == i32::from(ROLE_FOOTAGE))
+                .map(|row| row.top + row.height)
+                .fold(0.0_f32, f32::max);
+            rows.push(TrackData {
+                role: i32::from(ROLE_SPARE),
+                first: true,
+                empty: false,
+                id: SharedString::new(),
+                visible: true,
+                muted: self.footage_muted(),
+                locked: false,
+                size: TrackSize::Auto,
+                height: 30.0,
+                top: footage_end,
+            });
+        }
+        sync(&models.tracks, rows);
 
         sync(
             &models.clips,
@@ -8552,9 +8662,8 @@ impl Studio {
     }
 
     /// Captions the way Reels wear them: two or three words at a time, big
-    /// and bold with a heavy outline, each group popping in as it is said,
-    /// every third one in yellow. Two undo steps: the titles, then their
-    /// entrances.
+    /// and bold with a heavy outline, each group on screen as it is said,
+    /// every third one in yellow. One undo step.
     fn viral_captions(&mut self, clip: &Clip, segments: &[concat_speech::transcribe::Segment]) {
         let rate = clip.speed.max(0.01);
         let words: Vec<&concat_speech::transcribe::Word> =
@@ -8564,12 +8673,6 @@ impl Studio {
             self.notify(&t("Nothing was said in that clip"), true);
             return;
         }
-        let before: HashSet<String> = self
-            .timeline()
-            .clips
-            .iter()
-            .map(|clip| clip.id.clone())
-            .collect();
         let commands: Vec<Command> = groups
             .iter()
             .enumerate()
@@ -8594,23 +8697,6 @@ impl Studio {
             .collect();
         let count = commands.len();
         self.apply(Command::Batch { commands });
-        let pops: Vec<Command> = self
-            .timeline()
-            .clips
-            .iter()
-            .filter(|made| made.kind == model::ClipKind::Text && !before.contains(&made.id))
-            .map(|made| Command::SetClipAnimation {
-                clip_id: made.id.clone(),
-                slot: model::AnimationSlot::In,
-                animation: Some(model::ClipAnimation {
-                    preset: "Zoom In".to_owned(),
-                    duration: 0.12,
-                }),
-            })
-            .collect();
-        if !pops.is_empty() {
-            self.apply(Command::Batch { commands: pops });
-        }
         self.notify(&tf("Added {0} captions", &[&count]), false);
     }
 

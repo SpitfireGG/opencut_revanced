@@ -239,6 +239,8 @@ export global Editor {
     /// Two fingers on the monitor scale the selected picture; `factor` is
     /// the spread against where they landed.
     callback stage-pinch-started();
+    /// Phone: a clip tapped on its row; the playhead moves into it.
+    callback clip-focus(id: string);
     callback stage-pinched(factor: float);
 
     /// A custom cutout's brush, as the inspector set it: which of the four

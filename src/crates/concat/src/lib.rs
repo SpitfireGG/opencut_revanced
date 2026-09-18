@@ -847,6 +847,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
     editor.on_stage_released(on_window!(|state| {
         state.stage_released();
     }));
+    editor.on_clip_focus(on_window!(|state, id: SharedString| {
+        state.focus_clip(id.as_str());
+    }));
     editor.on_stage_pinch_started(on_window!(|state| {
         state.stage_pinch_started();
     }));
@@ -911,7 +914,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
         // their own and reach the same rows.
         "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
         | "undo" | "redo" | "add-selected" | "close-project" | "save" | "import-place"
-        | "import-overlay" | "import-footage" | "new-from-gallery" => {
+        | "import-overlay" | "import-footage" | "mute-footage" | "new-from-gallery" => {
             Shell::with(|_, app| app.invoke_app_menu_selected(action.clone()));
         }
         _ => Shell::with(|shell, app| {
@@ -1205,6 +1208,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
                                 })
                             });
                         }
+                        "mute-footage" => state.toggle_footage_sound(),
                         "import-overlay" => {
                             platform::pick_media_async(&i18n::t("Import media"), |paths| {
                                 on_ui(move |studio, _, _| {
