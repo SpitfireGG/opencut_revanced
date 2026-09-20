@@ -247,15 +247,26 @@ mod tests {
         assert_eq!(fill("plain", &[&1]), "plain");
     }
 
+    /// English is the only locale that ships, so a translation is a file
+    /// the machine adds - and one that covers a line here and there reads
+    /// as English for the rest rather than as nothing at all.
     #[test]
     fn a_missing_translation_reads_as_the_key() {
         let root = std::env::temp_dir().join(format!("concat-i18n-{}", std::process::id()));
         let dirs = AppDirs::under(&root);
-        select("de", &dirs);
-        assert_eq!(current(), "de");
+        let folder = user_dir(&dirs);
+        std::fs::create_dir_all(&folder).expect("the locale folder is ours to make");
+        std::fs::write(
+            folder.join("xx.json"),
+            r#"{"_": "Test", "Settings": "Einstellungen"}"#,
+        )
+        .expect("the locale file is ours to write");
+        select("xx", &dirs);
+        assert_eq!(current(), "xx");
         assert_eq!(t("a key nobody translated"), "a key nobody translated");
-        assert_ne!(t("Settings"), "Settings");
+        assert_eq!(t("Settings"), "Einstellungen");
         select(ENGLISH, &dirs);
         assert_eq!(t("Settings"), "Settings");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
