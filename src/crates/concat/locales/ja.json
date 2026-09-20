@@ -1,4 +1,8 @@
 {
+  "+ Add audio": "+ オーディオを追加",
+  "+ Add overlay": "+ オーバーレイを追加",
+  "+ Add text": "+ テキストを追加",
+  "+ Add video": "+ 動画を追加",
   "Please don't close Concat or lock your screen.": "Concat を閉じたり画面をロックしたりしないでください。",
   "_": {
     "name": "日本語"
@@ -720,7 +724,6 @@
   "Listening on {0} · {1} connected": "Listening on {0} · {1} connected",
   "Made a Reel from the highlight": "Made a Reel from the highlight",
   "Make Reel": "Make Reel",
-  "Music": "Music",
   "Music ducked under speech": "Music ducked under speech",
   "New token": "New token",
   "No projects yet": "No projects yet",
@@ -760,10 +763,6 @@
   "Your projects": "Your projects",
   "your.account": "your.account",
   "{0} is not an address like 127.0.0.1:7420": "{0} is not an address like 127.0.0.1:7420",
-  "Add music": "Add music",
-  "Add photo/sticker": "Add photo/sticker",
-  "Add text": "Add text",
-  "Add video": "Add video",
   "Free": "Free",
   "Ratio": "Ratio",
   "Rotate": "Rotate",

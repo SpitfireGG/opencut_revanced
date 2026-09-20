@@ -1,4 +1,8 @@
 {
+  "+ Add audio": "+ 오디오 추가",
+  "+ Add overlay": "+ 오버레이 추가",
+  "+ Add text": "+ 텍스트 추가",
+  "+ Add video": "+ 동영상 추가",
   "Please don't close Concat or lock your screen.": "Concat을 닫거나 화면을 잠그지 마세요.",
   "_": {
     "name": "한국어"
@@ -720,7 +724,6 @@
   "Listening on {0} · {1} connected": "Listening on {0} · {1} connected",
   "Made a Reel from the highlight": "Made a Reel from the highlight",
   "Make Reel": "Make Reel",
-  "Music": "Music",
   "Music ducked under speech": "Music ducked under speech",
   "New token": "New token",
   "No projects yet": "No projects yet",
@@ -760,10 +763,6 @@
   "Your projects": "Your projects",
   "your.account": "your.account",
   "{0} is not an address like 127.0.0.1:7420": "{0} is not an address like 127.0.0.1:7420",
-  "Add music": "Add music",
-  "Add photo/sticker": "Add photo/sticker",
-  "Add text": "Add text",
-  "Add video": "Add video",
   "Free": "Free",
   "Ratio": "Ratio",
   "Rotate": "Rotate",

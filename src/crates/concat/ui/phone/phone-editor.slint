@@ -442,6 +442,7 @@ export component PhoneEditor inherits Rectangle {
         else if (tool.id == "templates") { root.library-page = 5; root.open("library", tool.id, tool.label); }
         // straight to an action
         else if (tool.id == "import") { Editor.shortcut("import-place"); }
+        else if (tool.id == "edit-clip") { Editor.shortcut("edit-at-playhead"); }
         else if (tool.id == "captions") { Editor.captions(); }
         else if (tool.id == "speak") { Editor.speak(); }
         else if (tool.id == "track") { Editor.add-track(); }
@@ -478,11 +479,12 @@ export component PhoneEditor inherits Rectangle {
     // subtitles and cutting. Looks, effects, animation and templates come
     // back once these are right.
     property <[PhoneTool]> main-tools: [
-        { id: "import", glyph: Glyph.import, label: I18n.t("Import") },
+        { id: "edit-clip", glyph: Glyph.split, label: I18n.t("Edit") },
+        { id: "music", glyph: Glyph.music, label: I18n.t("Audio") },
         { id: "text", glyph: Glyph.text-mark, label: I18n.t("Text") },
+        { id: "filters", glyph: Glyph.sparkle, label: I18n.t("Effects") },
         { id: "overlay", glyph: Glyph.image, label: I18n.t("Overlay") },
-        { id: "music", glyph: Glyph.music, label: I18n.t("Music") },
-        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Subtitles") },
+        { id: "captions", glyph: Glyph.waveform, label: I18n.t("Captions") },
         { id: "ratio", glyph: Glyph.frame, label: I18n.t("Ratio") },
         { id: "project", glyph: Glyph.info, label: I18n.t("Project") },
     ];
@@ -653,10 +655,12 @@ export component PhoneEditor inherits Rectangle {
                 icon-size: 19px;
                 clicked => { Editor.shortcut("settings"); }
             }
-            BarButton {
-                glyph: Glyph.export;
-                icon-size: 19px;
-                clicked => { Editor.shortcut("export"); }
+            VerticalLayout {
+                alignment: center;
+                PillButton {
+                    label: I18n.t("Export");
+                    clicked => { Editor.shortcut("export"); }
+                }
             }
         }
     }

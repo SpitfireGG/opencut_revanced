@@ -1,4 +1,8 @@
 {
+  "+ Add audio": "+ 添加音频",
+  "+ Add overlay": "+ 添加叠加",
+  "+ Add text": "+ 添加文本",
+  "+ Add video": "+ 添加视频",
   "Please don't close Concat or lock your screen.": "请不要关闭 Concat 或锁定屏幕。",
   "_": {
     "name": "简体中文"
@@ -720,7 +724,6 @@
   "Listening on {0} · {1} connected": "Listening on {0} · {1} connected",
   "Made a Reel from the highlight": "Made a Reel from the highlight",
   "Make Reel": "Make Reel",
-  "Music": "Music",
   "Music ducked under speech": "Music ducked under speech",
   "New token": "New token",
   "No projects yet": "No projects yet",
@@ -760,10 +763,6 @@
   "Your projects": "Your projects",
   "your.account": "your.account",
   "{0} is not an address like 127.0.0.1:7420": "{0} is not an address like 127.0.0.1:7420",
-  "Add music": "Add music",
-  "Add photo/sticker": "Add photo/sticker",
-  "Add text": "Add text",
-  "Add video": "Add video",
   "Free": "Free",
   "Ratio": "Ratio",
   "Rotate": "Rotate",
