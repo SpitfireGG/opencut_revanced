@@ -253,6 +253,27 @@ export global Editor {
     callback clip-mute(id: string);
     callback stage-pinched(factor: float);
 
+    // ── the crop box ──
+    //
+    // While the phone's Crop sheet is up the picture is shown whole and the
+    // box says what is kept, as fractions off each edge of the picture.
+    // Rust holds the picture uncropped for as long as the box is up; the
+    // overlay drags these, the shape chips set them, and `crop-commit`
+    // turns them into the clip's crop. Nothing is committed until then, so
+    // a cropping that is abandoned leaves the clip as it was.
+    in-out property <bool> cropping;
+    in-out property <float> crop-left;
+    in-out property <float> crop-top;
+    in-out property <float> crop-right;
+    in-out property <float> crop-bottom;
+    /// The sheet opened: Rust holds the selected picture whole while the
+    /// box is up. The box itself is the UI's, seeded from the clip's crop.
+    callback crop-begin();
+    /// The tick: the box becomes the clip's crop, in one undo step.
+    callback crop-commit(left: float, top: float, right: float, bottom: float);
+    /// Back: the picture goes back to the crop it had.
+    callback crop-cancel();
+
     /// A custom cutout's brush, as the inspector set it: which of the four
     /// tools, how wide as a fraction of the picture, and whether a press on
     /// the stage paints at all rather than moving the picture.
