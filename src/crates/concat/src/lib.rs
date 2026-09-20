@@ -890,6 +890,19 @@ pub fn run() -> Result<(), slint::PlatformError> {
     editor.on_stage_released(on_window!(|state| {
         state.stage_released();
     }));
+    // The phone's crop box: the picture is held whole while it is up, and
+    // the box becomes the crop when the sheet is ticked.
+    editor.on_crop_begin(on_window!(|state| {
+        state.crop_begin();
+    }));
+    editor.on_crop_commit(on_window!(
+        |state, left: f32, top: f32, right: f32, bottom: f32| {
+            state.crop_commit(left, top, right, bottom);
+        }
+    ));
+    editor.on_crop_cancel(on_window!(|state| {
+        state.crop_cancel();
+    }));
     editor.on_clip_mute(on_window!(|state, id: SharedString| {
         state.clip_action(id.as_str(), "mute");
     }));

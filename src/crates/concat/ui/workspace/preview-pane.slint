@@ -11,6 +11,7 @@ import { Select } from "../primitives/select.slint";
 import { Pane, PaneHeader } from "pane.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { ClipKind, StageGuideData, StageItemData } from "../timeline/model.slint";
+import { Editor } from "../editor.slint";
 
 // The programme monitor: a header that says what the output is, a stage on a
 // sunken viewport, and a transport tray under it in three parts — timecode on
@@ -528,6 +529,142 @@ component Overlap inherits Rectangle {
     border-color: root.ink;
 }
 
+/// The crop box, while the Crop sheet is up. The picture under it is the
+/// whole picture - Rust holds the clip without its crop for as long as the
+/// sheet is open - and the box says what is kept: the part left bright,
+/// with a block on each corner to drag it by. Nothing is committed until
+/// the sheet is ticked, so a box that is abandoned costs the clip nothing.
+component CropBox inherits Rectangle {
+    in property <StageItemData> item;
+
+    /// The picture's own rectangle inside the overlay.
+    property <length> px: (root.item.cx - root.item.w / 2) * root.width;
+    property <length> py: (root.item.cy - root.item.h / 2) * root.height;
+    property <length> pw: Math.max(1px, root.item.w * root.width);
+    property <length> ph: Math.max(1px, root.item.h * root.height);
+    /// The box, from the fractions the sheet holds.
+    property <length> bx: root.px + Editor.crop-left * root.pw;
+    property <length> by: root.py + Editor.crop-top * root.ph;
+    property <length> bw: Math.max(1px, (1 - Editor.crop-left - Editor.crop-right) * root.pw);
+    property <length> bh: Math.max(1px, (1 - Editor.crop-top - Editor.crop-bottom) * root.ph);
+    /// A box never turns inside out: a tenth of the picture is the least it
+    /// can keep along either axis.
+    property <float> least: 0.1;
+
+    background: transparent;
+
+    // Each block moves the two edges it sits on, and is dragged to where
+    // the finger is rather than by how far it has come: the block travels
+    // with the box under it, and a delta against a moving origin cancels
+    // itself out after the first event.
+    function drag(corner: int, ax: length, ay: length) {
+        if (corner == 0 || corner == 3) {
+            Editor.crop-left = Math.max(0, Math.min(1 - Editor.crop-right - root.least,
+                (ax - root.px) / root.pw));
+        } else {
+            Editor.crop-right = Math.max(0, Math.min(1 - Editor.crop-left - root.least,
+                (root.px + root.pw - ax) / root.pw));
+        }
+        if (corner == 0 || corner == 1) {
+            Editor.crop-top = Math.max(0, Math.min(1 - Editor.crop-bottom - root.least,
+                (ay - root.py) / root.ph));
+        } else {
+            Editor.crop-bottom = Math.max(0, Math.min(1 - Editor.crop-top - root.least,
+                (root.py + root.ph - ay) / root.ph));
+        }
+    }
+
+    // What the crop takes away, dimmed: four bands round the box, so the
+    // part being kept is the only part at full strength.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: Math.max(0px, root.by);
+        background: #00000080;
+    }
+    Rectangle {
+        x: 0;
+        y: root.by + root.bh;
+        width: root.width;
+        height: Math.max(0px, root.height - root.by - root.bh);
+        background: #00000080;
+    }
+    Rectangle {
+        x: 0;
+        y: root.by;
+        width: Math.max(0px, root.bx);
+        height: root.bh;
+        background: #00000080;
+    }
+    Rectangle {
+        x: root.bx + root.bw;
+        y: root.by;
+        width: Math.max(0px, root.width - root.bx - root.bw);
+        height: root.bh;
+        background: #00000080;
+    }
+
+    // The box's own edge, with the thirds inside it.
+    Rectangle {
+        x: root.bx;
+        y: root.by;
+        width: root.bw;
+        height: root.bh;
+        background: transparent;
+        border-width: 1px;
+        border-color: #ffffffcc;
+
+        for third in [1, 2]: Rectangle {
+            x: parent.width * third / 3;
+            y: 0;
+            width: 1px;
+            height: parent.height;
+            background: #ffffff40;
+        }
+        for line in [1, 2]: Rectangle {
+            x: 0;
+            y: parent.height * line / 3;
+            width: parent.width;
+            height: 1px;
+            background: #ffffff40;
+        }
+    }
+
+    // The four blocks, clockwise from the top left.
+    for corner in [0, 1, 2, 3]: Rectangle {
+        property <length> at-x: (corner == 1 || corner == 2) ? root.bx + root.bw : root.bx;
+        property <length> at-y: corner >= 2 ? root.by + root.bh : root.by;
+
+        x: self.at-x - self.width / 2;
+        y: self.at-y - self.height / 2;
+        width: 44px;
+        height: 44px;
+        background: transparent;
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: grab.pressed ? 26px : 22px;
+            height: self.width;
+            border-radius: 3px;
+            background: grab.pressed ? Theme.accent : #ffffff;
+            // The blocks land on footage that may be white itself.
+            border-width: 1px;
+            border-color: #00000099;
+            animate width, background { duration: 80ms; }
+        }
+
+        grab := TouchArea {
+            moved => {
+                root.drag(corner,
+                    self.absolute-position.x + self.mouse-x - root.absolute-position.x,
+                    self.absolute-position.y + self.mouse-y - root.absolute-position.y);
+            }
+        }
+    }
+}
+
 component StageOverlay inherits Rectangle {
     in property <[StageItemData]> items;
     /// Draw Instagram's Reels interface over a portrait frame, and mark
@@ -732,6 +869,15 @@ component StageOverlay inherits Rectangle {
             grip-pressed(grip, x, y) => { root.grip-pressed(entry.id, grip, x, y); }
             dragged(x, y, snap) => { root.dragged(x, y, snap); }
             released => { root.released(); }
+        }
+
+        // The Crop sheet is up on this picture: its box, over everything.
+        if entry.selected && Editor.cropping: CropBox {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            item: entry;
         }
     }
 }

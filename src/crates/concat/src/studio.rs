@@ -844,6 +844,10 @@ pub struct Studio {
     pub preview: slint::Image,
     preview_busy: bool,
     preview_wanted: bool,
+    /// The moment the monitor was last asked for, while playing: the clock
+    /// ticks faster than the film runs, and a frame asked for twice is a
+    /// frame drawn over one the window may still be showing.
+    previewed_at: f32,
     /// Said once per session: a monitor that cannot decode says so, and
     /// then stops repeating itself.
     preview_failed: bool,
@@ -1532,6 +1536,7 @@ impl Studio {
             clipboard: None,
             preview: slint::Image::default(),
             preview_busy: false,
+            previewed_at: f32::MIN,
             preview_wanted: false,
             preview_failed: false,
             export: ExportState::default(),
@@ -2487,7 +2492,16 @@ impl Studio {
                             }
                             true
                         } else {
-                            studio.request_preview();
+                            // Only when the playhead has crossed into the
+                            // next frame of the film: sixty ticks a second
+                            // over a thirty frame project asked for every
+                            // frame twice, and the spare frame landed on a
+                            // texture the window had not finished with.
+                            let step = 1.0 / studio.frame_rate().max(1.0);
+                            if (studio.playhead - studio.previewed_at).abs() >= step {
+                                studio.previewed_at = studio.playhead;
+                                studio.request_preview();
+                            }
                             false
                         }
                     };
@@ -7325,6 +7339,13 @@ impl Studio {
                 .iter()
                 .position(|mode| *mode == concat_core::Blend::parse(&clip.blend))
                 .unwrap_or(0) as i32,
+            source_aspect: self
+                .project()
+                .media_by_id(&clip.media_id)
+                .and_then(|media| Some((media.width?, media.height?)))
+                .filter(|(w, h)| *w > 0 && *h > 0)
+                .map(|(w, h)| f64::from(w) as f32 / f64::from(h) as f32)
+                .unwrap_or(0.0),
             crop_left: clip.crop.map(|crop| crop.left as f32).unwrap_or(0.0),
             crop_top: clip.crop.map(|crop| crop.top as f32).unwrap_or(0.0),
             crop_right: clip.crop.map(|crop| crop.right as f32).unwrap_or(0.0),
@@ -8546,6 +8567,54 @@ impl Studio {
             }
             _ => {}
         }
+    }
+
+    /// The Crop sheet opened on a picture: the echo carries it without its
+    /// crop, so what the box is drawn over is the whole picture, all of it
+    /// there to cut from. The box lives in the UI until it is committed.
+    pub fn crop_begin(&mut self) {
+        let Some(id) = self.sole_selection() else {
+            return;
+        };
+        if !self.clip(&id).is_some_and(|clip| clip.kind.is_visual()) {
+            return;
+        }
+        self.begin_echo();
+        if let Some(clip) = self.echo_clip_mut(&id) {
+            clip.crop = None;
+        }
+        self.request_preview();
+    }
+
+    /// The box as the sheet leaves it, as the clip's crop: one command, so
+    /// one undo puts the whole cropping back.
+    pub fn crop_commit(&mut self, left: f32, top: f32, right: f32, bottom: f32) {
+        let Some(id) = self.sole_selection() else {
+            self.crop_cancel();
+            return;
+        };
+        self.echo = None;
+        let crop = model::Crop {
+            left: f64::from(left),
+            top: f64::from(top),
+            right: f64::from(right),
+            bottom: f64::from(bottom),
+        }
+        .tidy();
+        self.apply(Command::UpdateClip {
+            clip_id: id,
+            patch: ClipPatch {
+                crop: Some((!crop.is_none()).then_some(crop)),
+                ..Default::default()
+            },
+        });
+        self.request_preview();
+    }
+
+    /// The sheet left without a tick: the picture goes back to its own crop.
+    pub fn crop_cancel(&mut self) {
+        self.echo = None;
+        self.request_preview();
     }
 
     /// Crops a picture to a shape, centred: `"1:1"`, `"9:16"`, or `"free"`

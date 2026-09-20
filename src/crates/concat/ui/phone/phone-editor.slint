@@ -342,8 +342,62 @@ export component PhoneEditor inherits Rectangle {
     }
 
     function close() {
+        // A crop left without the tick is a crop not taken.
+        if (root.sheet == "crop") {
+            Editor.cropping = false;
+            Editor.crop-cancel();
+        }
         root.sheet = "";
         root.sheet-tool = "";
+    }
+
+    /// The sheet's tick. For the crop box that is the one moment the clip
+    /// changes; everything else is already applied, so the sheet just goes.
+    function confirm() {
+        if (root.sheet == "crop") {
+            Editor.cropping = false;
+            Editor.crop-commit(Editor.crop-left, Editor.crop-top,
+                Editor.crop-right, Editor.crop-bottom);
+            root.sheet = "";
+            root.sheet-tool = "";
+            return;
+        }
+        root.close();
+    }
+
+    /// The Crop sheet opening: the box starts on the clip's own crop and
+    /// Rust shows the picture whole behind it.
+    function crop-start() {
+        Editor.crop-left = Editor.selected-clip.crop-left;
+        Editor.crop-top = Editor.selected-clip.crop-top;
+        Editor.crop-right = Editor.selected-clip.crop-right;
+        Editor.crop-bottom = Editor.selected-clip.crop-bottom;
+        Editor.cropping = true;
+        Editor.crop-begin();
+    }
+
+    /// A shape chip: the largest box of that shape, centred on the picture.
+    /// Free - nought by nought - is the whole picture back.
+    function crop-shape(w: float, h: float) {
+        if (w <= 0 || h <= 0 || Editor.selected-clip.source-aspect <= 0) {
+            Editor.crop-left = 0;
+            Editor.crop-top = 0;
+            Editor.crop-right = 0;
+            Editor.crop-bottom = 0;
+            return;
+        }
+        if (Editor.selected-clip.source-aspect > w / h) {
+            // Wider than the shape: the sides come in, evenly.
+            Editor.crop-left = (1 - (w / h) / Editor.selected-clip.source-aspect) / 2;
+            Editor.crop-right = Editor.crop-left;
+            Editor.crop-top = 0;
+            Editor.crop-bottom = 0;
+        } else {
+            Editor.crop-top = (1 - Editor.selected-clip.source-aspect / (w / h)) / 2;
+            Editor.crop-bottom = Editor.crop-top;
+            Editor.crop-left = 0;
+            Editor.crop-right = 0;
+        }
     }
 
     /// Puts away the top thing: a sheet, then full screen, then the
@@ -366,6 +420,9 @@ export component PhoneEditor inherits Rectangle {
         root.sheet = kind;
         root.sheet-tool = id;
         root.sheet-title = title;
+        if (kind == "crop") {
+            root.crop-start();
+        }
     }
 
     function run(tool: PhoneTool) {
@@ -976,12 +1033,25 @@ export component PhoneEditor inherits Rectangle {
                     padding-right: 4px;
                     spacing: 8px;
 
+                    // The crop box is the one sheet with something to
+                    // throw away, so it is the one with a cross beside its
+                    // tick, the way the design has it.
+                    if root.sheet == "crop": VerticalLayout {
+                        alignment: center;
+                        BarButton {
+                            glyph: Glyph.close;
+                            clicked => { root.close(); }
+                        }
+                    }
+
                     Text {
                         horizontal-stretch: 1;
                         text: root.sheet-title;
                         color: Theme.fg;
                         font-size: Theme.fs-xl;
                         font-weight: Theme.weight-title;
+                        horizontal-alignment: root.sheet == "crop" ? TextHorizontalAlignment.center
+                            : TextHorizontalAlignment.left;
                         vertical-alignment: center;
                         overflow: elide;
                     }
@@ -1004,7 +1074,7 @@ export component PhoneEditor inherits Rectangle {
                         alignment: center;
                         BarButton {
                             glyph: Glyph.check;
-                            clicked => { root.close(); }
+                            clicked => { root.confirm(); }
                         }
                     }
                 }
@@ -1254,7 +1324,7 @@ export component PhoneEditor inherits Rectangle {
                                     crop-chip := TouchArea {
                                         clicked => {
                                             crop-sheet.picked = shape.id;
-                                            Editor.menu-selected("crop:" + shape.id);
+                                            root.crop-shape(shape.w, shape.h);
                                         }
                                     }
                                 }

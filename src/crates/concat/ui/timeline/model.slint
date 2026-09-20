@@ -299,6 +299,9 @@ export struct SelectedClipData {
     crop-top: float,
     crop-right: float,
     crop-bottom: float,
+    /// The media's own shape, width over height, for the crop box's shape
+    /// chips. Zero when the clip has no picture of its own - a title.
+    source-aspect: float,
     fade-in: float,
     fade-out: float,
 
