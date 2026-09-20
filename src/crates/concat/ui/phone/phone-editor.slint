@@ -1033,12 +1033,25 @@ export component PhoneEditor inherits Rectangle {
                     padding-right: 4px;
                     spacing: 8px;
 
+                    // The crop box is the one sheet with something to
+                    // throw away, so it is the one with a cross beside its
+                    // tick, the way the design has it.
+                    if root.sheet == "crop": VerticalLayout {
+                        alignment: center;
+                        BarButton {
+                            glyph: Glyph.close;
+                            clicked => { root.close(); }
+                        }
+                    }
+
                     Text {
                         horizontal-stretch: 1;
                         text: root.sheet-title;
                         color: Theme.fg;
                         font-size: Theme.fs-xl;
                         font-weight: Theme.weight-title;
+                        horizontal-alignment: root.sheet == "crop" ? TextHorizontalAlignment.center
+                            : TextHorizontalAlignment.left;
                         vertical-alignment: center;
                         overflow: elide;
                     }
