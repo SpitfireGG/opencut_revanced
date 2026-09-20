@@ -41,24 +41,10 @@ pub struct Language {
 /// The code the interface starts in, and the language of the keys.
 pub const ENGLISH: &str = "en";
 
-/// The locales the app ships, as `(code, file)`. `en.json` is the
-/// catalogue's own inventory - every key, with itself as the value - which
-/// is what a translator starts a new file from.
-const BUILT_IN: [(&str, &str); 13] = [
-    ("en", include_str!("../locales/en.json")),
-    ("de", include_str!("../locales/de.json")),
-    ("es", include_str!("../locales/es.json")),
-    ("fr", include_str!("../locales/fr.json")),
-    ("hr", include_str!("../locales/hr.json")),
-    ("it", include_str!("../locales/it.json")),
-    ("ja", include_str!("../locales/ja.json")),
-    ("ko", include_str!("../locales/ko.json")),
-    ("pt-BR", include_str!("../locales/pt-BR.json")),
-    ("ru", include_str!("../locales/ru.json")),
-    ("tr", include_str!("../locales/tr.json")),
-    ("zh-Hans", include_str!("../locales/zh-Hans.json")),
-    ("zh-TW", include_str!("../locales/zh-TW.json")),
-];
+/// The locales the app ships, as `(code, file)`. English alone: `en.json`
+/// is the catalogue's own inventory - every key, with itself as the value -
+/// and a translator starts a new file from it, dropped into `user_dir`.
+const BUILT_IN: [(&str, &str); 1] = [("en", include_str!("../locales/en.json"))];
 
 /// One language's strings.
 struct Catalog {
