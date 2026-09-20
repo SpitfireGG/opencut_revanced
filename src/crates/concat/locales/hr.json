@@ -1,4 +1,5 @@
 {
+  "Please don't close Concat or lock your screen.": "Nemoj zatvarati Concat ni zaključavati zaslon.",
   "_": {
     "name": "Hrvatski"
   },
@@ -221,6 +222,7 @@
   "Everything brighter than the threshold turns negative, as an over-exposed print does.": "Sve svjetlije od praga postaje negativ, kao kod prekoračeno eksponiranog printa.",
   "Everything on this machine. Transcription and speech run against models you download here, and nothing about a project leaves the device.": "Sve na ovom stroju. Transkripcija i govor rade na modelima koje preuzimate ovdje i ništa iz projekta ne napušta uređaj.",
   "Export": "Izvoz",
+  "Exporting...": "Izvoz...",
   "Export again": "Izvezi ponovno",
   "Export failed: {0}": "Izvoz nije uspio: {0}",
   "Export finished": "Izvoz završen",

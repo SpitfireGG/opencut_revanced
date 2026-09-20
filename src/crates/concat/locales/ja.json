@@ -1,4 +1,5 @@
 {
+  "Please don't close Concat or lock your screen.": "Concat を閉じたり画面をロックしたりしないでください。",
   "_": {
     "name": "日本語"
   },
@@ -178,6 +179,7 @@
   "Every colour becomes its opposite.": "すべての色を反転します。",
   "Everything on this machine. Transcription and speech run against models you download here, and nothing about a project leaves the device.": "すべてこの端末内で動作します。文字起こしと音声合成はここでダウンロードしたモデルを使い、プロジェクトの情報が端末の外に出ることはありません。",
   "Export": "書き出し",
+  "Exporting...": "書き出し中...",
   "Export again": "もう一度書き出す",
   "Export failed: {0}": "書き出しに失敗しました：{0}",
   "Export finished": "書き出しが完了しました",

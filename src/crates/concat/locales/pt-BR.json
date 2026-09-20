@@ -1,4 +1,5 @@
 {
+  "Please don't close Concat or lock your screen.": "Não feche o Concat nem bloqueie a tela.",
   "_": {
     "name": "Português (Brasil)"
   },
@@ -178,6 +179,7 @@
   "Every colour becomes its opposite.": "Cada cor vira seu oposto.",
   "Everything on this machine. Transcription and speech run against models you download here, and nothing about a project leaves the device.": "Tudo neste computador. Transcrição e fala usam modelos que você baixa aqui, e nada de um projeto sai do dispositivo.",
   "Export": "Exportar",
+  "Exporting...": "Exportando...",
   "Export again": "Exportar de novo",
   "Export failed: {0}": "A exportação falhou: {0}",
   "Export finished": "Exportação concluída",

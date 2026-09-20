@@ -461,7 +461,10 @@ component Clip inherits Rectangle {
         width: parent.width;
         height: parent.height;
         border-radius: Theme.r-sm;
-        border-width: root.item.selected ? (root.phone ? 0px : 2px) : 1px;
+        // A phone draws no outline at all: the selected clip wears the tabs
+        // below, and a line round every other one turns a row of cuts into
+        // a row of segments. The strip reads as one piece of film.
+        border-width: root.item.selected ? (root.phone ? 0px : 2px) : (root.phone ? 0px : 1px);
         border-color: root.item.selected ? Theme.accent : root.mark;
     }
 
@@ -973,7 +976,10 @@ export component Lanes inherits Rectangle {
             // just before the edit starts, as the design has it.
             for track in root.tracks: Rectangle {
                 property <length> from: root.at(0);
-                property <length> to: root.at(root.drawn-end);
+                // To the edge of the screen, not to the end of the edit: past
+                // the last clip the rows carry on as empty space, which is
+                // what a phone editor shows you when you reach the end.
+                property <length> to: root.width;
 
                 x: Math.max(0px, self.from);
                 y: root.ruler-height + track.top - root.track-scroll + 3px;
