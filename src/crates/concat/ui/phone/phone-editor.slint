@@ -310,20 +310,24 @@ export component PhoneEditor inherits Rectangle {
     changed can-back => { Editor.back-consumable = root.can-back; }
     property <int> back-token: Editor.back-token;
     changed back-token => { root.back(); }
-    init => { Editor.back-consumable = root.can-back; }
-
     // The home screen's "+": a fresh project, then the library page, the
-    // way VN lands a new edit on its media library. The sheet is open when
-    // the editor appears, so a bump that happened before the first render
-    // is seen here; later bumps arrive through the changed callback.
-    property <bool> library-was-opened: false;
-    changed Editor.library-token => { root.library-was-opened = true; }
-    init => { root.library-was-opened = true; }
-    changed library-was-opened => {
-        if (root.library-was-opened && Editor.library-token > 0) {
-            root.library-page = 0;
-            root.open("library", "media", I18n.t("Media library"));
+    // way VN lands a new edit on its media library. A bump that landed
+    // before this screen appeared is caught by `init`; later ones come
+    // through the changed callback. A global's own property cannot be
+    // watched, so the token is mirrored here first.
+    property <int> library-token: Editor.library-token;
+    changed library-token => { root.open-library(); }
+
+    init => {
+        Editor.back-consumable = root.can-back;
+        if (root.library-token > 0) {
+            root.open-library();
         }
+    }
+
+    function open-library() {
+        root.library-page = 0;
+        root.open("library", "media", I18n.t("Media library"));
     }
 
     // A clip sheet is about the selection; when the selection goes, so does

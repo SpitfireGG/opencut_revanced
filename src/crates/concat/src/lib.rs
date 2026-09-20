@@ -1276,8 +1276,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
                         "new-from-gallery" => {
                             state.quick_project();
                             if !state.on_start {
-                                app.global::<Editor>()
-                                    .set_library_token(app.global::<Editor>().get_library_token() + 1);
+                                app.global::<Editor>().set_library_token(
+                                    app.global::<Editor>().get_library_token() + 1,
+                                );
                             }
                         }
                         "export" => {
