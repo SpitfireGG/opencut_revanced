@@ -7,6 +7,7 @@ import { Glyph, Icon } from "../icons.slint";
 import { Button, CopyChip, DialogRow, DialogSection, Field, Modal, Progress } from "../primitives/modal.slint";
 import { Select } from "../primitives/select.slint";
 import { Switch } from "../inspector/controls.slint";
+import { Editor } from "../editor.slint";
 
 // The export dialog.
 //
@@ -152,6 +153,108 @@ component QualityCard inherits Rectangle {
     }
 }
 
+/// Exporting, on a phone: the whole screen, the frame it is working on, and
+/// how far along it is. A phone export takes minutes and the person watching
+/// it needs two things - that it is working, and that leaving will cost them
+/// it - so those are the only two things on the screen.
+export component ExportProgressPhone inherits Rectangle {
+    in property <ExportData> data;
+
+    callback cancel();
+
+    visible: root.data.phase == ExportPhase.running;
+    background: #000000;
+
+    // Nothing behind this reacts while it is up.
+    TouchArea { }
+
+    Rectangle {
+        x: 8px;
+        y: 8px;
+        width: 48px;
+        height: 48px;
+        background: back.pressed ? #ffffff1a : Colors.transparent;
+        border-radius: 24px;
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            glyph: Glyph.chevron-left;
+            size: 24px;
+            tint: #ffffff;
+        }
+        back := TouchArea {
+            clicked => { root.cancel(); }
+        }
+    }
+
+    VerticalLayout {
+        x: 24px;
+        y: 90px;
+        width: parent.width - 48px;
+        spacing: 12px;
+
+        Text {
+            text: I18n.t("Exporting...");
+            color: #ffffff;
+            font-size: 34px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: I18n.t("Please don't close Concat or lock your screen.");
+            color: #ffffffb3;
+            font-size: 16px;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+
+    // The frame, with the count over it and the bar along its top edge: one
+    // object to look at rather than a panel of readouts.
+    Rectangle {
+        property <length> side: Math.min(parent.width - 140px, parent.height / 2.6);
+
+        x: (parent.width - self.width) / 2;
+        y: 250px;
+        width: root.data.portrait ? self.side : self.side * 16 / 9;
+        height: root.data.portrait ? self.side * 16 / 9 : self.side;
+        background: #141414;
+        clip: true;
+
+        if Editor.preview-frame.width > 0: Image {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            source: Editor.preview-frame;
+            image-fit: contain;
+            opacity: 0.55;
+        }
+
+        // The bar: the picture's own top edge fills up.
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width * Math.clamp(root.data.progress, 0, 1);
+            height: 5px;
+            background: #ffffff;
+        }
+
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: "\{Math.round(root.data.progress * 1000) / 10}%";
+            color: #ffffff;
+            font-size: 40px;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
 export component ExportDialog inherits Modal {
     in property <ExportData> data;
 
@@ -169,7 +272,9 @@ export component ExportDialog inherits Modal {
 
     property <bool> running: root.data.phase == ExportPhase.running;
 
-    open: root.data.open;
+    // On a phone the running export has a screen of its own; see
+    // ExportProgressPhone.
+    open: root.data.open && !(Theme.touch && root.running);
     title: I18n.t("Export");
     glyph: Glyph.export;
     surface-width: 470px;

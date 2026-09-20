@@ -108,14 +108,15 @@ fn phone_row_height(role: u8) -> f32 {
     }
 }
 
-/// Where a part's row sits on a phone, top first, as VN stacks them: the
-/// music, the words, the overlays, then the footage over its own sound.
+/// Where a part's row sits on a phone, top first, the way CapCut stacks
+/// them: the footage over its own sound, then the music, the words and the
+/// overlays under it.
 fn role_rank(role: u8) -> u8 {
     match role {
-        ROLE_SOUND => 0,
-        ROLE_WORDS => 1,
-        ROLE_OVERLAY => 2,
-        ROLE_FOOTAGE => 3,
+        ROLE_FOOTAGE => 0,
+        ROLE_SOUND => 1,
+        ROLE_WORDS => 2,
+        ROLE_OVERLAY => 3,
         _ => 4,
     }
 }
@@ -6874,6 +6875,11 @@ impl Studio {
                 .filter(|row| row.role == i32::from(ROLE_FOOTAGE))
                 .map(|row| row.top + row.height)
                 .fold(0.0_f32, f32::max);
+            // The footage is the top row, so everything under it moves down
+            // to leave the sound its band.
+            for row in rows.iter_mut().filter(|row| row.top >= footage_end) {
+                row.top += 28.0;
+            }
             rows.push(TrackData {
                 role: i32::from(ROLE_SPARE),
                 first: true,
@@ -8567,6 +8573,26 @@ impl Studio {
             }
             _ => {}
         }
+    }
+
+    /// Picks the picture under the playhead, so the clip's own tools come
+    /// up without having to find it on the row first. The topmost one wins,
+    /// the way a tap on the monitor would.
+    pub fn select_at_playhead(&mut self) {
+        let at = f64::from(self.playhead);
+        let Some(id) = self
+            .timeline()
+            .clips
+            .iter()
+            .filter(|clip| clip.kind.is_visual())
+            .filter(|clip| clip.start <= at + 1e-6 && at < clip.start + clip.duration - 1e-6)
+            .map(|clip| clip.id.clone())
+            .next_back()
+        else {
+            return;
+        };
+        self.selection = vec![id];
+        self.menu_target = None;
     }
 
     /// The Crop sheet opened on a picture: the echo carries it without its

@@ -579,14 +579,33 @@ fn paint(
         ..Paint::default()
     };
 
-    // The plate, first and under everything.
-    if let Some(fill) = plate
-        && let Some(rect) = Rect::from_xywh(left - pad_x, top - pad_y, outer_w, outer_h)
-    {
+    // The plate, first and under everything: a box per line, each one the
+    // width of the words on it, the way a phone editor's captions read. One
+    // box round the whole block would leave a gap beside a short last line
+    // and stop the text looking like it was typed onto the picture.
+    if let Some(fill) = plate {
         paint.set_color(fill);
         let radius = em * 0.15;
         let mut plate_path = PathBuilder::new();
-        push_rounded_rect(&mut plate_path, rect, radius);
+        for (row, line) in lines.iter().enumerate() {
+            if line.width <= 0.0 {
+                continue;
+            }
+            let indent = match style.align {
+                Align::Left => 0.0,
+                Align::Center => (block_w - line.width) / 2.0,
+                Align::Right => block_w - line.width,
+            };
+            let Some(rect) = Rect::from_xywh(
+                left + indent - pad_x,
+                top + row as f32 * pitch - pad_y,
+                line.width + 2.0 * pad_x,
+                ascent + descent + 2.0 * pad_y,
+            ) else {
+                continue;
+            };
+            push_rounded_rect(&mut plate_path, rect, radius);
+        }
         if let Some(plate_path) = plate_path.finish() {
             canvas.fill_path(
                 &plate_path,

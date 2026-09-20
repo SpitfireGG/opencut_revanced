@@ -22,7 +22,7 @@ import { Bezier, Curves, Fmt, Focus, Payload } from "util.slint";
 import { EffectData } from "demo/effects-panel.slint";
 import { MediaFilter, MediaItemData, MediaKind, TextPresetData } from "workspace/media-pane.slint";
 import { ContextMenu, MenuItemData, MenuRow } from "primitives/context-menu.slint";
-import { ExportData, ExportDialog, ExportPhase } from "dialogs/export.slint";
+import { ExportData, ExportDialog, ExportPhase, ExportProgressPhone } from "dialogs/export.slint";
 import { ModelData, SettingsData, SettingsDialog, SystemFactData } from "dialogs/settings.slint";
 import { ProjectDialog, ProjectSheetData } from "dialogs/project.slint";
 import { RelinkDialog, RelinkData, MissingMediaItem } from "dialogs/relink.slint";
@@ -638,5 +638,16 @@ export component App inherits Window {
         width: root.width;
         height: root.height;
         data: root.toast;
+    }
+
+    // The phone's export screen, over even the dialogs: while a render runs
+    // it is the only thing on the phone.
+    if Editor.compact: ExportProgressPhone {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        data: root.export;
+        cancel => { root.export-cancel(); }
     }
 }

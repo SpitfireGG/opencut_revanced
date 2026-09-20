@@ -973,7 +973,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
         // their own and reach the same rows.
         "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
         | "undo" | "redo" | "add-selected" | "close-project" | "save" | "import-place"
-        | "import-overlay" | "import-footage" | "mute-footage" | "new-from-gallery" => {
+        | "import-overlay" | "import-footage" | "mute-footage" | "new-from-gallery"
+        | "edit-at-playhead" => {
             Shell::with(|_, app| app.invoke_app_menu_selected(action.clone()));
         }
         _ => Shell::with(|shell, app| {
@@ -1268,6 +1269,10 @@ pub fn run() -> Result<(), slint::PlatformError> {
                             });
                         }
                         "mute-footage" => state.toggle_footage_sound(),
+                        // The phone's Edit: the clip under the playhead is
+                        // what you meant, so it is the one that gets picked
+                        // and its own tools that come up.
+                        "edit-at-playhead" => state.select_at_playhead(),
                         "import-overlay" => {
                             platform::pick_media_async(&i18n::t("Import media"), |paths| {
                                 on_ui(move |studio, _, _| {

@@ -461,7 +461,10 @@ component Clip inherits Rectangle {
         width: parent.width;
         height: parent.height;
         border-radius: Theme.r-sm;
-        border-width: root.item.selected ? (root.phone ? 0px : 2px) : 1px;
+        // A phone draws no outline at all: the selected clip wears the tabs
+        // below, and a line round every other one turns a row of cuts into
+        // a row of segments. The strip reads as one piece of film.
+        border-width: root.item.selected ? (root.phone ? 0px : 2px) : (root.phone ? 0px : 1px);
         border-color: root.item.selected ? Theme.accent : root.mark;
     }
 
@@ -973,7 +976,10 @@ export component Lanes inherits Rectangle {
             // just before the edit starts, as the design has it.
             for track in root.tracks: Rectangle {
                 property <length> from: root.at(0);
-                property <length> to: root.at(root.drawn-end);
+                // To the edge of the screen, not to the end of the edit: past
+                // the last clip the rows carry on as empty space, which is
+                // what a phone editor shows you when you reach the end.
+                property <length> to: root.width;
 
                 x: Math.max(0px, self.from);
                 y: root.ruler-height + track.top - root.track-scroll + 3px;
@@ -988,10 +994,10 @@ export component Lanes inherits Rectangle {
                 if track.empty: Text {
                     x: Math.max(10px, -parent.from + 10px);
                     height: parent.height;
-                    text: track.role == 0 ? I18n.t("Add video")
-                        : track.role == 1 ? I18n.t("Add text")
-                        : track.role == 2 ? I18n.t("Add photo/sticker")
-                        : I18n.t("Add music");
+                    text: track.role == 0 ? I18n.t("+ Add video")
+                        : track.role == 1 ? I18n.t("+ Add text")
+                        : track.role == 2 ? I18n.t("+ Add overlay")
+                        : I18n.t("+ Add audio");
                     color: Theme.fg-dim;
                     font-size: Theme.fs-sm;
                     vertical-alignment: center;
@@ -1124,7 +1130,7 @@ export component Lanes inherits Rectangle {
                 tool: root.phone ? TimelineTool.select : root.tool;
                 phone: root.phone;
                 edge-grab: root.phone ? (entry.selected ? 20px : 0px) : 6px;
-                view-from: -self.x + (root.phone ? 44px : 0px);
+                view-from: -self.x;
                 view-to: root.width - self.x;
                 pan-started => { root.pan-start(); }
                 panned(dx, dy) => { root.pan(dx, dy); }
@@ -1397,57 +1403,15 @@ export component Lanes inherits Rectangle {
                 }
             }
 
-            // ── the phone's icon column ───────────────────────────────────────
+            // ── the phone's ruler, over the rows ──────────────────────────────
             //
-            // Fixed at the left and never moving: each row's icon, level with
-            // its row, over a strip the edit slides under.
-            if root.phone: Rectangle {
+            // At the top, where CapCut keeps it: the times run along above
+            // the tracks and the playhead passes through them.
+            if root.phone && root.tracks.length > 0: Rectangle {
                 x: 0;
                 y: 0;
-                width: 44px;
-                height: root.height;
-                background: Theme.lane;
-            }
-
-            for track in root.tracks: Rectangle {
-                x: 4px;
-                y: root.ruler-height + track.top - root.track-scroll
-                    + (track.height - self.height) / 2;
-                width: 36px;
-                height: Math.min(32px, track.height);
-                visible: root.phone && track.first && track.height > 0
-                    && track.role >= 0 && track.role <= 4
-                    && self.y + self.height > 0 && self.y < root.height;
-                border-radius: 8px;
-                background: row-icon.pressed ? Theme.field : Colors.transparent;
-
-                Icon {
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                    glyph: track.role == 0 ? Glyph.film
-                        : track.role == 1 ? Glyph.text-mark
-                        : track.role == 2 ? Glyph.image
-                        : track.role == 3 ? Glyph.music
-                        : track.muted ? Glyph.volume-off : Glyph.volume;
-                    size: 16px;
-                    weight: 1.7;
-                    tint: Theme.fg-muted;
-                }
-
-                row-icon := TouchArea {
-                    enabled: parent.visible;
-                    clicked => { root.row-add(track.role); }
-                }
-            }
-
-            // ── the phone's ruler, under the rows ─────────────────────────────
-            if root.phone && root.tracks.length > 0: Rectangle {
-                property <TrackData> last: root.tracks[root.tracks.length - 1];
-
-                x: 44px;
-                y: root.ruler-height + self.last.top + self.last.height - root.track-scroll + 2px;
-                width: root.width - 44px;
-                height: 20px;
+                width: root.width;
+                height: root.ruler-height;
                 clip: true;
 
                 for step in 64: Rectangle {
@@ -1462,14 +1426,14 @@ export component Lanes inherits Rectangle {
 
                     Rectangle {
                         x: 0;
-                        y: 0;
+                        y: parent.height - 5px;
                         width: 1px;
                         height: 5px;
                         background: Theme.fg-dim;
                     }
                     for minor in 4: Rectangle {
                         x: (minor + 1) * root.tick * root.px-per-second / 5;
-                        y: 0;
+                        y: parent.height - 3px;
                         width: 1px;
                         height: 3px;
                         visible: parent.seconds + (minor + 1) * root.tick / 5 <= root.drawn-end;
@@ -1477,7 +1441,7 @@ export component Lanes inherits Rectangle {
                     }
                     Text {
                         x: 0;
-                        y: 6px;
+                        y: 2px;
                         text: parent.seconds >= 60 ? Fmt.short-duration(parent.seconds)
                             : root.tick >= 1 ? "\{Math.round(parent.seconds)}s"
                             : "\{Fmt.round-to(parent.seconds, 2)}s";
@@ -1489,9 +1453,9 @@ export component Lanes inherits Rectangle {
 
             // ── the phone's playhead ─────────────────────────────────────────
             //
-            // A white line with a head under the ruler and a knob at the
-            // foot. Dragging the knob jogs through the edit, a pixel of drag
-            // a pixel of time at the current zoom.
+            // A plain white line through the whole stack, ruler included,
+            // as CapCut draws it. A drag anywhere on the lanes scrubs, so
+            // the line needs no handle of its own.
             if root.phone: Rectangle {
                 x: root.at(root.playhead) - self.width / 2;
                 y: 0;
@@ -1509,50 +1473,6 @@ export component Lanes inherits Rectangle {
                     drop-shadow-color: #00000080;
                 }
 
-                // In the gap above the rows, clear of every row.
-                knob := Rectangle {
-                    x: (parent.width - self.width) / 2;
-                    y: 2px;
-                    width: 22px;
-                    height: 14px;
-                    border-radius: 7px;
-                    background: jog.pressed ? Theme.accent : #ffffff;
-                    drop-shadow-blur: 4px;
-                    drop-shadow-color: #00000080;
-
-                    HorizontalLayout {
-                        alignment: center;
-                        spacing: 3px;
-                        for i in 2: VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 1.5px;
-                                height: 6px;
-                                background: #00000066;
-                            }
-                        }
-                    }
-                }
-
-                jog := TouchArea {
-                    x: knob.x - 10px;
-                    y: 0;
-                    width: knob.width + 20px;
-                    height: knob.height + 8px;
-                    property <float> from-time;
-                    property <length> from-x;
-                    pointer-event(event) => {
-                        if (event.kind == PointerEventKind.down) {
-                            self.from-time = root.playhead;
-                            self.from-x = self.absolute-position.x + self.mouse-x;
-                        }
-                    }
-                    moved => {
-                        root.scrubbed(Math.max(0, self.from-time
-                            + (self.absolute-position.x + self.mouse-x - self.from-x)
-                                / root.px-per-second));
-                    }
-                }
             }
 
             // ── the playhead ─────────────────────────────────────────────────
